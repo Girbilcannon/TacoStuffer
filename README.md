@@ -21,6 +21,8 @@ This is a must for speed and reliability for those who do not like to look at li
 Users who prefer to work in code will find that the built in attributes pane will only speed up their workflow. Making changes in the attributes pane reflect what is added to or removed from the code, always applying to the correct file, category, or asset. Even if you click and drag a grouping of markers to a new category, all type paths will be automatically updated in the XML.
 
 Even if the pack developer needs to use attributes that are not yet supported by Taco Stuffer, simply adding them to the XML will automatically apply them as a **Custom Attribute** within the Attributes pane, also stored within the Project root. These stored attribute definitions can be transferred into other projects. Like custom attributes, LUA files, though not yet supported, will still be readable and allow for code driven customizations visible after the project is compiled.
+<img width="1793" height="940" alt="image" src="https://github.com/user-attachments/assets/db159e0a-955d-4a2e-8b83-87feb5332bc1" />
+
 
 ### Fully Editable Trails
 Finish a few good trails and realize that some of them are wrong? Taco Stuffer's open-ended trail recording lets you always have control over your trails as though they never even left the application...because they haven't. Not only can you select individual trail segments and their points, Taco Stuffer offers an innovative trail smoothness slider that lets you break add or remove points without ever breaking its flow. You can also select trail points and move them around. Selecting multiple trail points will also let you rotate the group in world space however you wish. Trails points are always fully editable, and only converted **.trl** files upon compile, which will still retain your open-ended trails regardless.
@@ -30,6 +32,8 @@ If you have already developed a marker/trail pack, simply import it and take adv
 
 ### Single Monitor Support
 Even if you are on a laptop or only have one monitor, Taco Stuffer offers not only just overlay tools to help you do what you need to do while in the game, and visualizing your assets, but it also has an *(EXPERIMENTAL)* game window capture, allowing you play the game directly inside the application while you work on your project end to end.
+<img width="2560" height="1080" alt="image" src="https://github.com/user-attachments/assets/156bdc12-e057-4b62-a341-e49968ca26d1" />
+
 
 ### Stuffing The Taco!
 This is project compiling made easy! when you are ready to make the **.taco** file to test out in your favorite pathing tool, simply click the ## STUFF TACO NOW!*** button in the top right and your entire project will be packed up, placed in the proper folder you specify, and ready to go.
