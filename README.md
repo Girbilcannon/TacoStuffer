@@ -1,5 +1,5 @@
 # Taco Stuffer
-Taco Stuffer is the first ever, fully featured, marker development suite for Guild Wars 2 pathing enthusiasts. It comes completely with a wide range of features designed to build a custom, fully authored marker pack with a **.taco** extension.
+Taco Stuffer is the first ever, fully featured, marker development suite for Guild Wars 2 pathing enthusiasts. It comes complete with a wide range of features designed to build a custom, fully authored marker pack with a **.taco** extension.
 
 ### Organized Project Structure
 - New projects are built with folder structures that can be edited through project settings
