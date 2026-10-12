@@ -1,0 +1,47 @@
+# Visual Studio / IDE caches and per-user settings
+.vs/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# .NET build and publish output (also applies inside Checks)
+[Bb]in/
+[Oo]bj/
+[Pp]ublish/
+/BetaVerify/
+/BetaClean/
+/TestResults/
+*.trx
+*.coverage
+*.coveragexml
+
+# Local publish settings; keep the shared .pubxml profile
+*.pubxml.user
+
+# Local diagnostics and temporary files
+*.log
+*.dmp
+*.tmp
+*.bak
+~$*
+
+# Signing secrets must never be committed
+*.pfx
+*.p12
+*.key
+.env
+.env.*
+!.env.example
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Keep Checks/ source: these are regression checks, not generated output.
+# Keep Preview/: the HTML/PNG files are a design reference, not a runtime dependency.
+# Keep TacoStuffer/Attributes/: reference XML for the planned exposed definitions.
+# Do not ignore all EXEs, DLLs, ZIPs or image assets globally: intentional fixtures
+# and dependencies may need tracking. Put generated releases in ignored output folders.

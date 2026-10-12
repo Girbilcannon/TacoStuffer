@@ -1,0 +1,5 @@
+<AttributeGroup version="1" key="visibility" displayName="Visibility" appliesTo="POI,Trail,MarkerCategory">
+  <Attribute name="inGameVisibility" default="1" type="bool" optional="false" />
+  <Attribute name="miniMapVisibility" default="1" type="bool" optional="false" />
+  <Attribute name="mapVisibility" default="1" type="bool" optional="false" />
+</AttributeGroup>

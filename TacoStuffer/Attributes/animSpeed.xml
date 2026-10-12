@@ -1,0 +1,3 @@
+<AttributeGroup version="1" key="animSpeed" displayName="Animspeed" appliesTo="Trail,MarkerCategory">
+  <Attribute name="animSpeed" default="0" type="string" optional="false" />
+</AttributeGroup>

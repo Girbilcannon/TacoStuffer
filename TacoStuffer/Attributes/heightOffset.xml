@@ -1,0 +1,3 @@
+<AttributeGroup version="1" key="heightOffset" displayName="Heightoffset" appliesTo="POI,Trail,MarkerCategory">
+  <Attribute name="heightOffset" default="0" type="string" optional="false" />
+</AttributeGroup>

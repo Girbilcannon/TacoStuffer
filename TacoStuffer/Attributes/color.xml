@@ -1,0 +1,3 @@
+<AttributeGroup version="1" key="color" displayName="Color" appliesTo="POI,Trail,MarkerCategory">
+  <Attribute name="color" default="FFFFFFFF" type="string" optional="false" />
+</AttributeGroup>

@@ -1,0 +1,5 @@
+<AttributeGroup version="1" key="rotate" displayName="Rotate" appliesTo="POI,MarkerCategory">
+  <Attribute name="rotate-x" default="0" type="string" optional="false" />
+  <Attribute name="rotate-y" default="0" type="string" optional="false" />
+  <Attribute name="rotate-z" default="0" type="string" optional="false" />
+</AttributeGroup>

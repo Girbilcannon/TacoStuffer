@@ -1,0 +1,3 @@
+<AttributeGroup version="1" key="trailScale" displayName="Trailscale" appliesTo="Trail,MarkerCategory">
+  <Attribute name="trailScale" default="1.0" type="string" optional="true" />
+</AttributeGroup>

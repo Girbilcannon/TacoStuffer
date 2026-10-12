@@ -1,0 +1,8 @@
+<AttributeGroup version="1" key="sticky" displayName="Sticky (For Taquito Only)" appliesTo="POI,MarkerCategory">
+  <Attribute name="screenSticky" default="true" type="bool" optional="false" />
+  <Attribute name="stickyDistance" default="300" type="string" optional="false" />
+  <Attribute name="stickyHideOriginal" default="true" type="bool" optional="false" />
+  <Attribute name="stickyX" default="0" type="string" optional="true" />
+  <Attribute name="stickyY" default="0" type="string" optional="true" />
+  <Attribute name="stickyScale" default="1.0" type="string" optional="true" />
+</AttributeGroup>

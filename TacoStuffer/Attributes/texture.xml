@@ -1,0 +1,3 @@
+<AttributeGroup version="1" key="texture" displayName="Texture (Trails)" appliesTo="Trail,MarkerCategory">
+  <Attribute name="texture" default="TEXTURES/trail.png" type="file" optional="false" />
+</AttributeGroup>

@@ -1,0 +1,4 @@
+<AttributeGroup version="1" key="fade" displayName="Fade" appliesTo="POI,Trail,MarkerCategory">
+  <Attribute name="fadeNear" default="3000" type="string" optional="false" />
+  <Attribute name="fadeFar" default="3500" type="string" optional="false" />
+</AttributeGroup>

@@ -1,0 +1,105 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>TacoStuffer</AssemblyName>
+    <Version>0.1.1-beta</Version>
+    <AssemblyVersion>0.1.1.0</AssemblyVersion>
+    <FileVersion>0.1.1.0</FileVersion>
+    <InformationalVersion>0.1.1b</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <Product>Taco Stuffer</Product>
+    <Authors>Girbilcannon.8259</Authors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="Models\GpuTrailGeometry.cs;Services\Direct3D11Native.cs;Services\GpuTrailRenderer.cs" />
+    <Compile Include="Models\GpuTrailGeometry.cs" />
+    <Compile Include="Services\Direct3D11Native.cs" />
+    <Compile Include="Services\GpuTrailRenderer.cs" />
+    <RequiredEditorSource Include="Models\GpuTrailGeometry.cs;Services\Direct3D11Native.cs;Services\GpuTrailRenderer.cs" />
+    <!-- Remove the default matches before adding explicit entries to avoid duplicates. -->
+    <Compile Remove="Models\AttributeDefinition.cs;Models\ExplorerRow.cs" />
+    <Compile Include="Models\AttributeDefinition.cs" />
+    <Compile Include="Models\ExplorerRow.cs" />
+    <Compile Remove="MainWindow.Workspace.cs;Models\CategoryOperations.cs;Models\XmlSourceIndex.cs;Views\DetachedDocumentWindow.cs" />
+    <Compile Include="MainWindow.Workspace.cs" />
+    <Compile Include="Models\CategoryOperations.cs" />
+    <Compile Include="Models\XmlSourceIndex.cs" />
+    <Compile Include="Views\DetachedDocumentWindow.cs" />
+    <Compile Remove="MainWindow.PackEditing.cs;Models\PackEditing.cs;Models\TestPackBuilder.cs" />
+    <Compile Include="MainWindow.PackEditing.cs" />
+    <Compile Include="Models\PackEditing.cs" />
+    <Compile Include="Models\TestPackBuilder.cs" />
+    <Compile Remove="MainWindow.Project.cs;Models\ProjectStore.cs" />
+    <Compile Include="MainWindow.Project.cs" />
+    <Compile Include="Models\ProjectStore.cs" />
+    <Compile Remove="MainWindow.Ordering.cs;Models\CategoryOrder.cs;Views\DropGuideAdorner.cs" />
+    <Compile Include="MainWindow.Ordering.cs" />
+    <Compile Include="Models\CategoryOrder.cs" />
+    <Compile Include="Views\DropGuideAdorner.cs" />
+    <Compile Remove="MainWindow.Hierarchy.cs;Models\ExplorerHierarchy.cs;Models\AttributeRules.cs;Views\ExplorerRowView.cs" />
+    <Compile Include="MainWindow.Hierarchy.cs" />
+    <Compile Include="Models\ExplorerHierarchy.cs" />
+    <Compile Include="Models\AttributeRules.cs" />
+    <Compile Include="Views\ExplorerRowView.cs" />
+    <None Remove="Attributes\*.xml" />
+    <None Update="BETA-README.txt" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="MainWindow.Trails.cs;Models\EditableTrails.cs;Models\MapProjection.cs" />
+    <Compile Include="MainWindow.Trails.cs" />
+    <Compile Include="Models\EditableTrails.cs" />
+    <Compile Include="Models\MapProjection.cs" />
+    <RequiredEditorSource Include="MainWindow.Trails.cs;Models\EditableTrails.cs;Models\MapProjection.cs" />
+    <Compile Remove="Services\OverlayMouseObserver.cs" />
+    <Compile Include="Services\OverlayMouseObserver.cs" />
+    <RequiredEditorSource Include="Services\OverlayMouseObserver.cs" />
+    <Compile Remove="Models\MarkerPreviewMath.cs" />
+    <Compile Include="Models\MarkerPreviewMath.cs" />
+    <RequiredEditorSource Include="Models\MarkerPreviewMath.cs;Themes\PreviewAssets.xaml" />
+    <Compile Remove="Models\CameraProjection.cs;Models\MarkerRecording.cs;Views\WorldMarkerWindow.cs" />
+    <Compile Include="Models\CameraProjection.cs" />
+    <Compile Include="Models\MarkerRecording.cs" />
+    <Compile Include="Views\WorldMarkerWindow.cs" />
+    <RequiredEditorSource Include="Models\CameraProjection.cs;Models\MarkerRecording.cs;Views\WorldMarkerWindow.cs" />
+    <Compile Remove="MainWindow.Game.cs;Models\MumbleSnapshot.cs;Services\MumbleLinkReader.cs;Services\GameClientWindow.cs;Views\OverlayWindow.cs" />
+    <Compile Include="MainWindow.Game.cs" />
+    <Compile Include="Models\MumbleSnapshot.cs" />
+    <Compile Include="Services\MumbleLinkReader.cs" />
+    <Compile Include="Services\GameClientWindow.cs" />
+    <Compile Include="Views\OverlayWindow.cs" />
+    <RequiredEditorSource Include="MainWindow.Game.cs;Models\MumbleSnapshot.cs;Services\MumbleLinkReader.cs;Services\GameClientWindow.cs;Views\OverlayWindow.cs" />
+    <RequiredEditorSource Include="MainWindow.Hierarchy.cs;Models\ExplorerHierarchy.cs;Models\AttributeRules.cs;Views\ExplorerRowView.cs;MainWindow.Ordering.cs;Models\CategoryOrder.cs;Views\DropGuideAdorner.cs;MainWindow.Project.cs;Models\ProjectStore.cs;MainWindow.PackEditing.cs;Models\PackEditing.cs;Models\TestPackBuilder.cs;MainWindow.Workspace.cs;Models\CategoryOperations.cs;Models\XmlSourceIndex.cs;Views\DetachedDocumentWindow.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="MainWindow.History.cs;MainWindow.Keybinds.cs;MainWindow.Search.cs;Models\EditorHistory.cs;Models\EditorPreferences.cs;Models\ExplorerSearch.cs" />
+    <Compile Include="MainWindow.History.cs" />
+    <Compile Include="MainWindow.Keybinds.cs" />
+    <Compile Include="MainWindow.Search.cs" />
+    <Compile Include="Models\EditorHistory.cs" />
+    <Compile Include="Models\EditorPreferences.cs" />
+    <Compile Include="Models\ExplorerSearch.cs" />
+    <RequiredEditorSource Include="MainWindow.History.cs;MainWindow.Keybinds.cs;MainWindow.Search.cs;Models\EditorHistory.cs;Models\EditorPreferences.cs;Models\ExplorerSearch.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="Models\VisualAttributeMath.cs" />
+    <Compile Include="Models\VisualAttributeMath.cs" />
+    <RequiredEditorSource Include="Models\VisualAttributeMath.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <RequiredEditorSource Include="MainWindow.PlayInApp.cs;MainWindow.GameLifecycle.cs;Views\GameViewportHost.cs;MainWindow.HostedCode.cs;Views\HostedCodeWindow.cs" />
+  </ItemGroup>
+  <Target Name="CheckRequiredModelSources" BeforeTargets="PrepareForBuild">
+    <Error Condition="!Exists('Models\AttributeDefinition.cs')"
+           Text="Missing Models\AttributeDefinition.cs. Extract the complete build-fix patch into the folder containing TacoStuffer.csproj, preserving its Models and Attributes folders." />
+    <Error Condition="!Exists('Models\ExplorerRow.cs')"
+           Text="Missing Models\ExplorerRow.cs. Extract the complete build-fix patch into the folder containing TacoStuffer.csproj, preserving its Models and Attributes folders." />
+    <Error Condition="!Exists('%(RequiredEditorSource.Identity)')" Text="Missing %(RequiredEditorSource.Identity). Restore the complete source tree, preserving every file and subfolder." />
+  </Target>
+</Project>

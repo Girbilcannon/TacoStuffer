@@ -1,0 +1,3 @@
+<AttributeGroup version="1" key="isSeparator" displayName="Separator" appliesTo="POI,Trail,MarkerCategory">
+  <Attribute name="isSeparator" default="1" type="bool" optional="false" />
+</AttributeGroup>

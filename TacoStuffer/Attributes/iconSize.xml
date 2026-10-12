@@ -1,0 +1,3 @@
+<AttributeGroup version="1" key="iconSize" displayName="Iconsize" appliesTo="POI,MarkerCategory">
+  <Attribute name="iconSize" default="1.0" type="string" optional="true" />
+</AttributeGroup>

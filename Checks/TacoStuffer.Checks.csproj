@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../TacoStuffer/Models/TrailPicking.cs" Link="TrailPicking.cs" />
+    <Compile Include="../TacoStuffer/Models/AttributeDefinition.cs" Link="AttributeDefinition.cs" />
+    <Compile Include="../TacoStuffer/Models/PreviewCategories.cs" Link="PreviewCategories.cs" />
+    <Compile Include="../TacoStuffer/Models/ElementIdentity.cs" Link="ElementIdentity.cs" />
+    <Compile Include="../TacoStuffer/Services/WorkspacePerformance.cs" Link="WorkspacePerformance.cs" />
+    <Compile Include="../TacoStuffer/Models/ProjectAssetPaths.cs" Link="ProjectAssetPaths.cs" />
+    <Compile Include="../TacoStuffer/Models/TacoImporter.cs" Link="TacoImporter.cs" />
+    <Compile Include="../TacoStuffer/Models/GpuTrailGeometry.cs" Link="GpuTrailGeometry.cs" />
+    <Compile Include="../TacoStuffer/Models/EditableTrails.cs" Link="EditableTrails.cs" />
+    <Compile Include="../TacoStuffer/Models/MapProjection.cs" Link="MapProjection.cs" />
+    <Compile Include="../TacoStuffer/Models/MarkerPreviewMath.cs" Link="MarkerPreviewMath.cs" />
+    <Compile Include="../TacoStuffer/Models/CameraProjection.cs" Link="CameraProjection.cs" />
+    <Compile Include="../TacoStuffer/Models/MarkerRecording.cs" Link="MarkerRecording.cs" />
+    <Compile Include="../TacoStuffer/Models/MumbleSnapshot.cs" Link="MumbleSnapshot.cs" />
+    <Compile Include="../TacoStuffer/Models/CategoryOperations.cs" Link="CategoryOperations.cs" />
+    <Compile Include="../TacoStuffer/Models/XmlSourceIndex.cs" Link="XmlSourceIndex.cs" />
+    <Compile Include="../TacoStuffer/Models/PackEditing.cs" Link="PackEditing.cs" />
+    <Compile Include="../TacoStuffer/Models/TestPackBuilder.cs" Link="TestPackBuilder.cs" />
+    <Compile Include="../TacoStuffer/Models/ProjectStore.cs" Link="ProjectStore.cs" />
+    <Compile Include="../TacoStuffer/Models/CategoryOrder.cs" Link="CategoryOrder.cs" />
+    <Compile Include="../TacoStuffer/Models/AttributeRules.cs" Link="AttributeRules.cs" />
+    <Compile Include="../TacoStuffer/Models/EditorHistory.cs" Link="EditorHistory.cs" />
+    <Compile Include="../TacoStuffer/Models/EditorPreferences.cs" Link="EditorPreferences.cs" />
+    <Compile Include="../TacoStuffer/Models/ExplorerSearch.cs" Link="ExplorerSearch.cs" />
+    <Compile Include="../TacoStuffer/Models/VisualAttributeMath.cs" Link="VisualAttributeMath.cs" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,5 @@
+<AttributeGroup version="1" key="position" displayName="Position" appliesTo="POI,MarkerCategory">
+  <Attribute name="xpos" default="0" type="string" optional="false" />
+  <Attribute name="ypos" default="0" type="string" optional="false" />
+  <Attribute name="zpos" default="0" type="string" optional="false" />
+</AttributeGroup>

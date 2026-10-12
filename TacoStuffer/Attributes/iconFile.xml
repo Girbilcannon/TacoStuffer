@@ -1,0 +1,3 @@
+<AttributeGroup version="1" key="iconFile" displayName="Icon (Markers)" appliesTo="POI,MarkerCategory">
+  <Attribute name="iconFile" default="TEXTURES/marker.png" type="file" optional="false" />
+</AttributeGroup>

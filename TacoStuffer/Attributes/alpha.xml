@@ -1,0 +1,3 @@
+<AttributeGroup version="1" key="alpha" displayName="Alpha" appliesTo="POI,Trail,MarkerCategory">
+  <Attribute name="alpha" default="1.0" type="string" optional="false" />
+</AttributeGroup>
