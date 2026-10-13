@@ -101,7 +101,8 @@ public partial class MainWindow
         if (gameClient.ProcessId == 0)
         {
             mumbleSession.Reset();
-            mumble.Dispose();
+            // Keep the named mapping available for a game that starts later.
+            // The reader is disposed when Taco Stuffer closes or an actual read fails.
             gameFrame = null;
         }
         else mumbleSession.Observe(gameFrame, now);
@@ -109,7 +110,14 @@ public partial class MainWindow
         GameConnectionDot.Foreground = ready ? (Brush)FindResource("AccentBrush") : (Brush)FindResource("TortillaBrush");
         GameConnectionText.Text = ready ? "GW2 · Map " + gameFrame!.MapId : gameClient.ProcessId == 0 ? "GW2 disconnected" : "GW2 · waiting for map";
         GameConnectionText.ToolTip = ready ? gameFrame!.CharacterName + " · MumbleLink connected" : mumble.Error ?? "Waiting for fresh character and map telemetry.";
-        OverlayButton.IsEnabled = OverlayMenuItem.IsEnabled = projectFile != null && pages.Count > 0 && ready;
+        // Connection status and overlay availability use the same readiness gate.
+        // Explain a missing authoring target on click instead of leaving a connected game locked out.
+        OverlayButton.IsEnabled = OverlayMenuItem.IsEnabled = ready;
+        string overlayHint = !ready ? mumble.Error ?? "Enter a playable GW2 map and wait for fresh telemetry."
+            : projectFile == null ? "GW2 connected. Create or open a .cilantro project before recording."
+            : pages.Count == 0 ? "GW2 connected. Add an XML document to this project before recording."
+            : "Open the game overlay. Visible while GW2 or Taco Stuffer is active.";
+        OverlayButton.ToolTip = OverlayMenuItem.ToolTip = overlayHint;
         if (trailRecording && (!ready || gameFrame?.MapId != recordingTrail?.MapId) && !trailPaused)
         {
             PauseTrailSamples();

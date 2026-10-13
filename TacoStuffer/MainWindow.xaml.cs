@@ -1149,15 +1149,20 @@ public partial class MainWindow : Window
 
     private void ShowOverlay(object sender, RoutedEventArgs e)
     {
-        if (projectFile == null || pages.Count == 0)
-        {
-            Notice("No XML target", "Create/open a project and add an XML document first.");
-            return;
-        }
         PollGame();
         if (!mumbleSession.IsPlayable || gameClient.Handle == 0)
         {
             Notice("Waiting for GW2", "Enter a playable map and wait for MumbleLink to connect before opening the overlay.");
+            return;
+        }
+        if (projectFile == null)
+        {
+            Notice("Project required", "GW2 is connected. Create or open a .cilantro project using the Project menu before opening the recording overlay.");
+            return;
+        }
+        if (pages.Count == 0)
+        {
+            Notice("XML document required", "GW2 is connected, but this project has no XML documents. Add an XML document before opening the recording overlay.");
             return;
         }
         if (!TrySyncXml()) return;

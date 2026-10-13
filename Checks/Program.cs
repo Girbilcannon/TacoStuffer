@@ -254,6 +254,28 @@ byte[] MumbleFrame()
     return bytes;
 }
 var mumbleBytes = MumbleFrame();
+Check(MumbleSnapshot.MappingSize == 5460 && MumbleSnapshot.FrameSize == 1364, "Mumble allocation includes the full description while decoding only the telemetry prefix");
+if (OperatingSystem.IsWindows())
+{
+    // A private mapping simulates a fresh install without touching the game's real link.
+    string testLink = "TacoStufferMumbleCheck_" + Guid.NewGuid().ToString("N");
+    using var consumer = new TacoStuffer.Services.MumbleLinkReader(testLink);
+    Check(consumer.Read() == null && consumer.Error == null, "Reader creates an empty link and waits for genuine telemetry");
+    using var producer = System.IO.MemoryMappedFiles.MemoryMappedFile.OpenExisting(testLink, System.IO.MemoryMappedFiles.MemoryMappedFileRights.ReadWrite);
+    using var producerView = producer.CreateViewAccessor(0, MumbleSnapshot.MappingSize, System.IO.MemoryMappedFiles.MemoryMappedFileAccess.ReadWrite);
+    producerView.Write(MumbleSnapshot.MappingSize - 1, (byte)0x5a);
+    var published = MumbleFrame();
+    BitConverter.GetBytes((uint)123).CopyTo(published, 4);
+    producerView.WriteArray(0, published, 0, published.Length);
+    Check(consumer.Read()?.Tick == 123, "GW2-style producer can populate a link created first by Taco Stuffer");
+    using var secondConsumer = new TacoStuffer.Services.MumbleLinkReader(testLink);
+    Check(secondConsumer.Read()?.Tick == 123 && producerView.ReadByte(MumbleSnapshot.MappingSize - 1) == 0x5a, "An additional consumer preserves existing telemetry and description bytes");
+    BitConverter.GetBytes((uint)124).CopyTo(published, 4);
+    producerView.WriteArray(0, published, 0, published.Length);
+    Check(consumer.Read()?.Tick == 124, "Created link continues receiving fresh game frames");
+    consumer.Dispose();
+    Check(consumer.Read()?.Tick == 124 && producerView.ReadByte(MumbleSnapshot.MappingSize - 1) == 0x5a, "Reconnect reuses the producer mapping without resetting it");
+}
 var frame = MumbleSnapshot.Decode(mumbleBytes)!;
 Check(frame != null && frame.ProcessId == 1234 && frame.MapId == 15 && frame.CharacterName == "Test Character", "Decode GW2 UTF-16 identity and extended context despite declared length 48");
 Check(frame.AvatarPosition.X == 1.25f && frame.AvatarPosition.Z == -3.75f && frame.CameraPosition.X == 4, "Position offsets must match Windows MumbleLink layout");

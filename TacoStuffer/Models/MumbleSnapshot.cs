@@ -11,6 +11,9 @@ public sealed record MumbleSnapshot(uint Tick, uint ProcessId, uint MapId, uint 
     // Windows UTF-16 layout, checked against the supplied TacO MumbleLink.h.
     public CompassTelemetry? Compass { get; init; }
     public const int FrameSize = 1364;
+    // Allocate the full Windows LinkedMem layout, including the UTF-16 description.
+    // The decoder only needs the prefix above; GW2 may map/write the entire structure.
+    public const int MappingSize = FrameSize + 2048 * 2; // 5460 bytes
     public static MumbleSnapshot? Decode(ReadOnlySpan<byte> data)
     {
         // GW2 declares 48 context bytes for Mumble's instance matching but

@@ -14,15 +14,26 @@ public sealed class MumbleLinkReader : IDisposable
     public string? Error { get; private set; }
     public MumbleLinkReader(string name = "MumbleLink") => LinkName = name;
 
-    // Read-only shared-memory access: the game owns the producer. The tick checks
-    // below reject changing snapshots instead of assuming the writer takes a lock.
+    // Mumble's game-side link opens an existing mapping. Create it when no other
+    // consumer has done so, and retain the handle even before GW2 starts.
+    // Only the game writes telemetry; our view remains read-only. Never zero an
+    // existing mapping, since Mumble/Nexus/other consumers may already be using it.
     public MumbleSnapshot? Read()
     {
         try
         {
             if (mapping == null)
             {
-                mapping = MemoryMappedFile.OpenExisting(LinkName, MemoryMappedFileRights.Read);
+                try
+                {
+                    mapping = MemoryMappedFile.OpenExisting(LinkName, MemoryMappedFileRights.Read);
+                }
+                catch (FileNotFoundException)
+                {
+                    // Creation needs ReadWrite access so GW2 can open its producer view.
+                    // CreateOrOpen handles a race with another consumer without resetting data.
+                    mapping = MemoryMappedFile.CreateOrOpen(LinkName, MumbleSnapshot.MappingSize, MemoryMappedFileAccess.ReadWrite);
+                }
                 view = mapping.CreateViewAccessor(0, MumbleSnapshot.FrameSize, MemoryMappedFileAccess.Read);
             }
             Error = null;
