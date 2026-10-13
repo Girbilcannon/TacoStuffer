@@ -1,5 +1,5 @@
 # TACO STUFFER PERSONAL-USE LICENSE
-## Version 1.1 — October 9, 2026
+## Version 0.1.1b — October 11, 2026
 
 **Copyright (c) 2026 Aaron Marine. All rights reserved.**
 **Developer attribution: Girbilcannon.8259**
