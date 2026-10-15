@@ -36,4 +36,4 @@ Even if you are on a laptop or only have one monitor, Taco Stuffer offers not on
 
 
 ### Stuffing The Taco!
-This is project compiling made easy! when you are ready to make the **.taco** file to test out in your favorite pathing tool, simply click the ## STUFF TACO NOW!*** button in the top right and your entire project will be packed up, placed in the proper folder you specify, and ready to go.
+This is project compiling made easy! when you are ready to make the **.taco** file to test out in your favorite pathing tool, simply click the **STUFF TACO NOW!** button in the top right and your entire project will be packed up, placed in the proper folder you specify, and ready to go.
