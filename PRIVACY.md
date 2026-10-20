@@ -1,5 +1,5 @@
 # Privacy and Local Data
-**Documentation baseline: Taco Stuffer 0.1.1b, October 2026.**
+**Documentation baseline: Taco Stuffer 0.1.3b, October 2026.**
 
 ### Local operation
 The current application code has no application analytics, advertising,
