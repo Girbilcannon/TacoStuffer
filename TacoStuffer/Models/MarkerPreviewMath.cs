@@ -4,6 +4,9 @@ namespace TacoStuffer.Models;
 
 public static class MarkerPreviewMath
 {
+    // TacO TypeData::height defaults to 1.5 meters when heightOffset is absent.
+    // This is a display offset, not a coordinate to bake into recorded/exported POIs.
+    public const float DefaultHeightOffset = 1.5f;
     public static float Opacity(float alpha, float distanceMeters, float near, float far)
     {
         float result = Math.Clamp(alpha, 0, 1);

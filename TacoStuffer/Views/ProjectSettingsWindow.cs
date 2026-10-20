@@ -10,10 +10,12 @@ public sealed class ProjectSettingsWindow : PreviewDialog
 {
     public ProjectAssetPaths Paths { get; private set; }
     public string OutputFolder { get; private set; }
-    public ProjectSettingsWindow(string projectRoot, ProjectAssetPaths current, string currentOutputFolder) : base("Project Settings", 610)
+    public bool IncludeDocumentation { get; private set; }
+    public ProjectSettingsWindow(string projectRoot, ProjectAssetPaths current, string currentOutputFolder, bool includeDocumentation = true) : base("Project Settings", 610)
     {
         Paths = current;
         OutputFolder = currentOutputFolder;
+        IncludeDocumentation = includeDocumentation;
         Label("Compiled .taco output folder · optional");
         var output = Input(currentOutputFolder);
         Action("Browse .taco output location…", (_, _) =>
@@ -26,6 +28,9 @@ public sealed class ProjectSettingsWindow : PreviewDialog
             if (browse.ShowDialog(this) == true) output.Text = browse.FolderName;
         });
         Label("Leave blank to use this project's EXPORT folder. The selected folder is used for future builds; existing .taco files stay in their current location.");
+        var includeDocs = new CheckBox { Content = "Include documentation in compiled .taco", IsChecked = includeDocumentation, Margin = new Thickness(0, 12, 0, 4) };
+        Body.Children.Add(includeDocs);
+        Label("Includes Markdown and plain-text documents. Uncheck to keep build notes only in your project. Scripts are included separately.");
         Label("Asset folders · relative to this project");
         Label("Choose a folder inside the project, or use . for the project root. Pickers include subfolders. These defaults do not move existing files or change XML references.");
         TextBox Field(string label, string value)
@@ -57,6 +62,7 @@ public sealed class ProjectSettingsWindow : PreviewDialog
         Action("Defaults", (_, _) =>
         {
             output.Text = "";
+            includeDocs.IsChecked = true;
             icons.Text = textures.Text = "TEXTURES";
             trails.Text = "DATA";
         });
@@ -68,6 +74,7 @@ public sealed class ProjectSettingsWindow : PreviewDialog
                 if (folder.Length != 0 && !Path.IsPathFullyQualified(folder))
                     throw new InvalidOperationException("The .taco output location must be an absolute folder path, or blank to use EXPORT.");
                 Paths = new ProjectAssetPaths(icons.Text, textures.Text, trails.Text).Validated();
+                IncludeDocumentation = includeDocs.IsChecked == true;
                 OutputFolder = folder.Length == 0 ? "" : Path.GetFullPath(folder);
                 DialogResult = true;
             }

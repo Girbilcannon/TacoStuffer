@@ -14,7 +14,7 @@ public partial class MainWindow
             Notice("No project", "Create or open a project first.");
             return;
         }
-        var dialog = new ProjectSettingsWindow(projectFolder, assetPaths, tacoOutputFolder) { Owner = this };
+        var dialog = new ProjectSettingsWindow(projectFolder, assetPaths, tacoOutputFolder, includeDocumentation) { Owner = this };
         if (dialog.ShowDialog() != true) return;
         try
         {
@@ -22,6 +22,7 @@ public partial class MainWindow
             foreach (string path in new[] { dialog.Paths.MarkerIcons, dialog.Paths.TrailTextures, dialog.Paths.TrailFiles }) Directory.CreateDirectory(Path.Combine(projectFolder, path));
             assetPaths = dialog.Paths;
             tacoOutputFolder = dialog.OutputFolder;
+            includeDocumentation = dialog.IncludeDocumentation;
             if (selected?.Element != null) ShowAttributes();
             StatusText.Text = "Project folders updated. Save the project to retain them; future builds use the selected .taco output folder.";
         }

@@ -1,4 +1,5 @@
 using System.IO;
+using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
@@ -105,6 +106,7 @@ public partial class MainWindow : Window
         UpdateBuildStatus();
         PreviewKeyDown += ProjectShortcut;
         updating = true;
+        Closed += (_, _) => { foreach (var code in codePages) code.View.ClosePreview(); };
         Documents.Items.Clear();
         GameTab.Visibility = Visibility.Collapsed;
         AddTab.Visibility = Visibility.Collapsed;
@@ -355,14 +357,13 @@ public partial class MainWindow : Window
         if (selected != null) keys.Add(selected.DocumentName + "|" + selected.Key);
         var rows = new List<ExplorerRow>();
         if (projectFile != null) rows.Add(new(ProjectTitle.Text, "", null, 0, "project", "project"));
-        foreach (var code in codePages) rows.Add(new("▤ " + code.Name, code.Name, null, 1, "code", "code:" + code.Name));
         var orderedPages = pages.Where(p => ViewOpen(p.Tab)).Concat(pages.Where(p => !ViewOpen(p.Tab))).ToList();
         bool closedHeading = false;
         foreach (var page in orderedPages)
         {
             if (!ViewOpen(page.Tab) && !closedHeading)
             {
-                rows.Add(new("Closed Scripts", "", null, 0, "closedScripts", "closedScripts"));
+                rows.Add(new("Closed XML Documents", "", null, 0, "closedScripts", "closedScripts"));
                 closedHeading = true;
             }
             var categoryPaths = page.Xml.Descendants("MarkerCategory").Select(CategoryFullPath).ToHashSet();
@@ -372,9 +373,19 @@ public partial class MainWindow : Window
             foreach (var e in page.Xml.Root!.Element("POIs")?.Elements() ?? Enumerable.Empty<XElement>())
             if (!categoryPaths.Contains(Value(e, "type")))
             {
-                rows.Add(new("◇ " + e.Name.LocalName + " · unassigned", page.Name, e, 2, e.Name.LocalName, ElementKey(e)));
+                rows.Add(new("◇ " + e.Name.LocalName + " · unassigned" + InteractionBadge(e), page.Name, e, 2, e.Name.LocalName, ElementKey(e)));
                 if (e.Name.LocalName == "Trail") AddTrailRows(page, e, 3, rows);
             }
+        }
+        foreach (bool scripts in new[] { true, false })
+        {
+            var group = codePages.Where(c => (ProjectDocuments.Kind(c.Name) == ProjectDocumentKind.Lua) == scripts).ToList();
+            // Show the sections even before their first file is created.
+            if (projectFile == null) continue;
+            string title = scripts ? "Scripts" : "Docs";
+            rows.Add(new(title, "", null, 0, "documentGroup", "group:" + title));
+            foreach (var code in group.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
+                rows.Add(new("▤ " + Path.GetFileName(code.Name), code.Name, null, 1, "code", "code:" + code.Name));
         }
         updating = true;
         allExplorerRows = ExplorerHierarchy.Prepare(rows, collapsedElements);
@@ -406,7 +417,7 @@ public partial class MainWindow : Window
         rows.Add(new("▾ ▱ " + Value(category, "DisplayName", CategoryName(category)), page.Name, category, depth, "MarkerCategory", ElementKey(category)));
         foreach (var e in objects[path])
         {
-            string label = (e.Name.LocalName == "Trail" ? "↝ " : "◆ ") + Value(e, "DisplayName", Value(e, "name", AssetStem(e)));
+            string label = (e.Name.LocalName == "Trail" ? "↝ " : "◆ ") + Value(e, "DisplayName", Value(e, "name", AssetStem(e))) + InteractionBadge(e);
             rows.Add(new(label, page.Name, e, depth + 1, e.Name.LocalName, ElementKey(e)));
             if (e.Name.LocalName == "Trail") AddTrailRows(page, e, depth + 2, rows);
         }
@@ -499,6 +510,15 @@ public partial class MainWindow : Window
             var node = new TreeViewItem { Header = header, Tag = row, IsExpanded = false, Padding = new Thickness(4, 1, 4, 1), HorizontalContentAlignment = HorizontalAlignment.Stretch };
             quickMenuNodes[path] = node;
             AddCategoryContext(node, row);
+            if (Value(row.Element!, "isSeparator").Trim().Equals("true", StringComparison.OrdinalIgnoreCase) || Value(row.Element!, "isSeparator") == "1")
+            {
+                header.PreviewMouseLeftButtonDown += (_, e) =>
+                {
+                    if (!interactionTestMode || Value(row.Element!, "copy").Length == 0) return;
+                    e.Handled = true;
+                    TryMarkerCopy(Value(row.Element!, "copy"), Value(row.Element!, "copy-message"));
+                };
+            }
             if (children[path].Any())
             {
                 node.Items.Add(new TreeViewItem { Header = "", IsEnabled = false });
@@ -573,7 +593,9 @@ public partial class MainWindow : Window
             if (code != null) OpenTab(code.Tab);
             AttributesHost.Children.Clear();
             SelectionTitle.Text = focus.DocumentName;
-            CategoryPath.Text = "Lua code · saved and packaged; execution/visual preview is not supported yet.";
+            CategoryPath.Text = ProjectDocuments.Kind(focus.DocumentName) == ProjectDocumentKind.Lua
+                ? "Lua source · included in the pack; Taco Stuffer does not execute Lua."
+                : "Project documentation · compilation inclusion is controlled in Project Settings.";
             return;
         }
         if (focus.Kind == "texture")
@@ -641,6 +663,7 @@ public partial class MainWindow : Window
 
     private void ShowAttributes()
     {
+        interactionRangeStatus = null;
         using var timing = TacoStuffer.Services.WorkspacePerformance.Measure("Attributes.Build");
         if (selected?.Kind == "segment")
         {
@@ -699,15 +722,22 @@ public partial class MainWindow : Window
                 bool present = element.Attributes().Any(a => a.Name.LocalName.Equals(member.Name, StringComparison.OrdinalIgnoreCase));
                 if (member.Optional)
                 {
-                    var enabled = new CheckBox { Content = "Enable " + member.Name, IsChecked = present };
-                    enabled.Click += (_, _) => ChangeAttribute(member.Name, enabled.IsChecked == true ? member.DefaultValue : null);
+                    string inherited = EffectiveValue(element, member.Name, "\0");
+                    bool interactionField = definition.Key is "info" or "copy";
+                    var enabled = new CheckBox { Content = interactionField ? "Override / enable " + InteractionFieldLabel(member.Name) : "Enable " + member.Name, IsChecked = present };
+                    enabled.Click += (_, _) => ChangeAttribute(member.Name, enabled.IsChecked == true ? (interactionField && inherited != "\0" ? inherited : InteractionFieldDefault(element, member.Name, member.DefaultValue)) : null);
                     AttributesHost.Children.Add(enabled);
-                    if (!present) continue;
+                    if (!present)
+                    {
+                        if (interactionField && inherited != "\0") AttributesHost.Children.Add(new TextBlock { Text = "Inherited: " + inherited, TextWrapping = TextWrapping.Wrap, Foreground = (Brush)FindResource("MutedBrush") });
+                        else if (interactionField) AttributesHost.Children.Add(new TextBlock { Text = "Fallback: " + InteractionFieldDefault(element, member.Name, member.DefaultValue), Foreground = (Brush)FindResource("MutedBrush") });
+                        continue;
+                    }
                 }
                 if (member.Type == "bool")
                 {
                     string effective = EffectiveValue(element, member.Name, member.DefaultValue);
-                    var check = new CheckBox { Content = member.Name, IsChecked = effective is "1" or "true" };
+                    var check = new CheckBox { Content = InteractionFieldLabel(member.Name), IsChecked = effective.Trim() == "1" || effective.Trim().Equals("true", StringComparison.OrdinalIgnoreCase) };
                     check.Click += (_, _) => ChangeAttribute(member.Name, check.IsChecked == true ? "1" : "0");
                     AttributesHost.Children.Add(check);
                 }
@@ -716,6 +746,7 @@ public partial class MainWindow : Window
                 else if (EffectiveValue(element, member.Name, "\0") != "\0") AttributesHost.Children.Add(new TextBlock { Text = member.Name + " · inherited: " + EffectiveValue(element, member.Name, ""), Foreground = (Brush)FindResource("MutedBrush"), Margin = new Thickness(0, 5, 0, 5) });
                 else AttributesHost.Children.Add(new TextBlock { Text = "⚠ Missing required: " + member.Name, Foreground = (Brush)FindResource("TortillaBrush"), Margin = new Thickness(0, 5, 0, 5) });
             }
+            AddInteractionActions(element, definition.Key);
             if (definition.Members.Any(m => !m.Optional && EffectiveValue(element, m.Name, "\0") == "\0"))
             {
                 var required = new Button { Content = "Add missing required controls", Margin = new Thickness(0, 8, 0, 4) };
@@ -840,11 +871,19 @@ public partial class MainWindow : Window
 
     private void Field(string name, string value, Action<string> change)
     {
-        AttributesHost.Children.Add(new TextBlock { Text = name, Foreground = (Brush)FindResource("MutedBrush"), Margin = new Thickness(0, 6, 0, 4) });
-        var input = new TextBox { Text = value, Tag = name };
+        AttributesHost.Children.Add(new TextBlock { Text = InteractionFieldLabel(name), Foreground = (Brush)FindResource("MutedBrush"), Margin = new Thickness(0, 6, 0, 4) });
+        bool multiline = name.ToLowerInvariant() is "info" or "copy" or "copy-message";
+        var input = new TextBox { Text = value, Tag = name, AcceptsReturn = multiline, TextWrapping = multiline ? TextWrapping.Wrap : TextWrapping.NoWrap,
+            MinHeight = multiline ? 70 : 0, MaxHeight = multiline ? 200 : double.PositiveInfinity, VerticalScrollBarVisibility = multiline ? ScrollBarVisibility.Auto : ScrollBarVisibility.Hidden };
         Commit(input, () =>
         {
-            if (input.Text != value) change(input.Text);
+            if (input.Text == value) return;
+            if (name.Equals("infoRange", StringComparison.OrdinalIgnoreCase) || name.Equals("triggerRange", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!MarkerInteraction.TryRadius(input.Text, out float radius)) { Notice("Invalid range", "Enter a finite distance in meters using a decimal point."); return; }
+                change(radius.ToString("R", CultureInfo.InvariantCulture));
+            }
+            else change(input.Text);
         });
         AttributesHost.Children.Add(input);
     }
@@ -865,9 +904,9 @@ public partial class MainWindow : Window
             }
         }
         input.LostKeyboardFocus += (_, _) => Apply();
-        input.KeyDown += (_, e) =>
+        input.PreviewKeyDown += (_, e) =>
         {
-            if (e.Key == Key.Enter)
+            if (e.Key == Key.Enter && (!input.AcceptsReturn || (Keyboard.Modifiers & ModifierKeys.Control) != 0))
             {
                 Apply();
                 e.Handled = true;
@@ -943,7 +982,7 @@ public partial class MainWindow : Window
         {
             name = $"markers{xmlNumber++}.xml";
         }
-        while (pages.Any(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase)));
+        while (pages.Any(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) || File.Exists(Path.Combine(projectFolder!, name)));
         var xml = new XDocument(new XElement("OverlayData", new XElement("MarkerCategory", new XAttribute("name", packName), new XAttribute("DisplayName", display), new XElement("MarkerCategory", new XAttribute("name", Path.GetFileNameWithoutExtension(name)), new XAttribute("DisplayName", "New Category"))), new XElement("POIs")));
         var editor = new RichTextBox { FontFamily = new FontFamily("Consolas"), FontSize = 13, AcceptsTab = true, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         var tab = new TabItem { Header = name, Content = editor };
@@ -970,7 +1009,13 @@ public partial class MainWindow : Window
                 || targets.All(t => t.Name.LocalName.Equals("MarkerCategory", StringComparison.OrdinalIgnoreCase)))).ToList();
         var dialog = new AttributePickerWindow(definitions, ReloadDefinitions) { Owner = this };
         if (dialog.ShowDialog() != true) return;
-        var values = dialog.SelectedGroups.SelectMany(g => g.Members).ToDictionary(m => m.Name, m => (string?)m.DefaultValue, StringComparer.OrdinalIgnoreCase);
+        // Keep omitted interaction options omitted: they carry runtime fallbacks.
+        // Inherited interaction text remains inherited until explicitly overridden.
+        foreach (var group in dialog.SelectedGroups.Where(g => g.Key is "info" or "copy"))
+        foreach (var target in targets)
+        foreach (var member in group.Members.Where(m => !m.Optional))
+            if (EffectiveValue(target, member.Name, "\0") == "\0") SetValue(target, member.Name, member.DefaultValue);
+        var values = dialog.SelectedGroups.Where(g => g.Key is not ("info" or "copy")).SelectMany(g => g.Members).ToDictionary(m => m.Name, m => (string?)m.DefaultValue, StringComparer.OrdinalIgnoreCase);
         if (targets.Count == 1) values = values.Where(p => !targets[0].Attributes().Any(a => a.Name.LocalName.Equals(p.Key, StringComparison.OrdinalIgnoreCase))).ToDictionary(p => p.Key, p => p.Value);
         ApplyAttributeValues(targets, values);
     }
@@ -1057,7 +1102,7 @@ public partial class MainWindow : Window
         var item = RowContainer(e.OriginalSource);
         if (item == null) return;
         var row = ElementsList.ItemContainerGenerator.ItemFromContainer(item) as ExplorerRow;
-        if (row == null || (row.Element == null && row.Kind is not ("texture" or "document"))) return;
+        if (row == null || (row.Element == null && row.Kind is not ("texture" or "document" or "code"))) return;
         if (!ElementsList.SelectedItems.Contains(row))
         {
             ElementsList.SelectedItems.Clear();
@@ -1067,6 +1112,16 @@ public partial class MainWindow : Window
         var rename = new MenuItem { Header = "Rename… (F2)" };
         rename.Click += (_, _) => QuickRename(row);
         menu.Items.Add(rename);
+        if (row.Kind == "code")
+        {
+            var removeCode = new MenuItem { Header = "Delete document(s)…" };
+            removeCode.Click += (_, _) => DeleteCodeSelection();
+            menu.Items.Add(removeCode);
+            menu.PlacementTarget = item;
+            menu.IsOpen = true;
+            e.Handled = true;
+            return;
+        }
         if (row.Kind == "document")
         {
             var removeXml = new MenuItem { Header = "Delete XML…" };
@@ -1150,6 +1205,12 @@ public partial class MainWindow : Window
     private void ShowOverlay(object sender, RoutedEventArgs e)
     {
         PollGame();
+        if (overlay?.IsHostedMinimized == true)
+        {
+            overlay.RestoreControls();
+            UpdateOverlayVisibility();
+            return;
+        }
         if (!mumbleSession.IsPlayable || gameClient.Handle == 0)
         {
             Notice("Waiting for GW2", "Enter a playable map and wait for MumbleLink to connect before opening the overlay.");
@@ -1169,6 +1230,7 @@ public partial class MainWindow : Window
         if (overlay == null)
         {
             overlay = new OverlayWindow(gameClient.ProcessId);
+            overlay.PresentationChanged += UpdateHostedOverlayButton;
             previousOverlayDeleteDown = NativeGameWindow.DeleteDown;
             overlay.SetTrailSmoothness(trailSampler.Smoothness);
             overlay.TrailSmoothnessChanged += SetTrailSmoothness;
@@ -1178,6 +1240,9 @@ public partial class MainWindow : Window
             overlay.PreviewMouseDown += (_, _) => FlushHistoryCheckpoint();
             overlay.RepositionRequested += RepositionMarker;
             overlay.RenameAssetRequested += RenameOverlayAsset;
+            overlay.InteractionTestModeChanged += enabled => interactionTestMode = enabled;
+            overlay.MarkerInteractionRequested += CopyNearbyMarker;
+            overlay.CopyCategoryRequested += CopyOverlayCategory;
             overlay.NewTrailRequested += NewTrail;
             overlay.StartTrailRequested += StartTrailRecording;
             overlay.PauseTrailRequested += PauseTrailRecording;
@@ -1225,8 +1290,10 @@ public partial class MainWindow : Window
             };
             overlay.Closed += (_, _) =>
             {
+                CloseInteractionHuds();
                 StopTrailRecording();
                 overlay = null;
+                UpdateHostedOverlayButton();
                 StopWorldRendering();
                 worldMarkers?.Close();
                 worldMarkers = null;
@@ -1234,6 +1301,7 @@ public partial class MainWindow : Window
             overlay.EnsureHandle();
             StartWorldRendering();
         }
+        overlay.RestoreControls();
         RefreshOverlayWorkspace();
         var selectedPage = pages.FirstOrDefault(p => p.Name == selected?.DocumentName) ?? pages.FirstOrDefault(p => p.Tab.IsSelected) ?? pages.First();
         string? targetPath = selected?.Element?.Name == "MarkerCategory" ? CategoryFullPath(selected.Element) : selected?.Element == null ? null : Value(selected.Element, "type");
@@ -1287,7 +1355,7 @@ public partial class MainWindow : Window
         }
         try
         {
-            var result = TestPackBuilder.Build(output, pages.Select(p => (p.Name, p.FormattedXml)).ToList(), projectFolder, editableTrails, importedAssets, assetPaths);
+            var result = TestPackBuilder.Build(output, pages.Select(p => (p.Name, p.FormattedXml)).ToList(), projectFolder, editableTrails, importedAssets, assetPaths, codePages.Select(p => new ProjectCode(p.Name, p.Editor.Text)).ToList(), includeDocumentation);
             StatusText.Text = $"Test .taco built: {result.XmlFiles} XMLs, {result.Assets} assets, {result.Placeholders.Count} placeholders.";
             UpdateBuildStatus();
             Notice("Test Taco stuffed", output + "\n\n" + result.XmlFiles + " XML documents and " + result.Assets + " assets.\n" + result.Placeholders.Count + " placeholder files generated.\n\nThe archive includes a test-build report. Missing images use a magenta PNG; missing trails are empty TRL headers, not recorded routes. Editable trails compile to TRL; their project sources stay editable.");

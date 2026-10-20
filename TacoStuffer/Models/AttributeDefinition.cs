@@ -70,7 +70,8 @@ public sealed class AttributeCatalog
         """),
         ("mapDisplaySize.xml", """
         <AttributeGroup version="1" key="mapDisplaySize" displayName="Mapdisplaysize" appliesTo="POI,Trail,MarkerCategory">
-          <Attribute name="mapDisplaySize" default="60" type="string" optional="false" />
+          <Attribute name="mapDisplaySize" default="20" type="string" optional="false" />
+          <Attribute name="scaleOnMapWithZoom" default="true" type="bool" optional="true" />
         </AttributeGroup>
         """),
         ("position.xml", """
@@ -112,6 +113,20 @@ public sealed class AttributeCatalog
           <Attribute name="inGameVisibility" default="1" type="bool" optional="false" />
           <Attribute name="miniMapVisibility" default="1" type="bool" optional="false" />
           <Attribute name="mapVisibility" default="1" type="bool" optional="false" />
+        </AttributeGroup>
+        """),
+        ("info.xml", """
+        <AttributeGroup version="1" key="info" displayName="Info" appliesTo="POI,MarkerCategory">
+          <Attribute name="info" default="" type="multiline" optional="false" />
+          <Attribute name="infoRange" default="2" type="number" optional="true" />
+        </AttributeGroup>
+        """),
+        ("copy.xml", """
+        <AttributeGroup version="1" key="copy" displayName="Copy" appliesTo="POI,MarkerCategory">
+          <Attribute name="copy" default="" type="multiline" optional="false" />
+          <Attribute name="copy-message" default="'{0}' copied to clipboard." type="multiline" optional="true" />
+          <Attribute name="triggerRange" default="2" type="number" optional="true" />
+          <Attribute name="autoTrigger" default="false" type="bool" optional="true" />
         </AttributeGroup>
         """),
     ];

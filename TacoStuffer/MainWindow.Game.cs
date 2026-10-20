@@ -47,6 +47,7 @@ public partial class MainWindow
             worldMarkers?.Close();
             gameEvents.Dispose();
             mumble.Dispose();
+            CloseInteractionHuds();
         };
         PollGame();
         gameTimer.Start();
@@ -88,7 +89,7 @@ public partial class MainWindow
     private void PollGame()
     {
         if (gameMonitorClosed) return;
-        PollGameShortcuts(overlay?.IsVisible == true && NativeGameWindow.IsGameInputActive(gameClient) && mumbleSession.IsPlayable);
+        PollGameShortcuts(overlay?.IsRenderingActive == true && NativeGameWindow.IsGameInputActive(gameClient) && mumbleSession.IsPlayable);
         long now = Environment.TickCount64;
         gameFrame = mumble.Read();
         if (gameFrame != null || now - lastProcessProbe >= 1000)
@@ -126,17 +127,42 @@ public partial class MainWindow
         PollPlayInApp(ready);
         UpdateTrailControls();
         UpdateOverlayVisibility();
+        UpdateInteractionPreview();
+    }
+
+    private void UpdateHostedOverlayButton()
+    {
+        bool minimized = GameViewport.IsAttached && overlay?.IsHostedMinimized == true;
+        if (minimized)
+        {
+            HostedOverlayButton.Background = new SolidColorBrush(Color.FromRgb(46, 125, 70));
+            HostedOverlayButton.BorderBrush = new SolidColorBrush(Color.FromRgb(101, 200, 126));
+            HostedOverlayButton.Foreground = Brushes.White;
+        }
+        else
+        {
+            HostedOverlayButton.ClearValue(Control.BackgroundProperty);
+            HostedOverlayButton.ClearValue(Control.BorderBrushProperty);
+            HostedOverlayButton.ClearValue(Control.ForegroundProperty);
+        }
+        HostedOverlayButton.ToolTip = minimized ? "Overlay active; controls minimized. Click to restore."
+            : overlay == null ? "Open the game overlay." : "Show the game overlay controls.";
     }
 
     private void UpdateOverlayVisibility()
     {
+        UpdateHostedOverlayButton();
         if (gameMonitorClosed || overlay == null) return;
+        NativeGameWindow.HostedGameOverlay = GameViewport.IsAttached;
+        var activeEditor = Application.Current.Windows.Cast<Window>().FirstOrDefault(w => w.IsActive && w != overlay && w != worldMarkers && w is not InteractionHudWindow);
+        NativeGameWindow.EditorOcclusionWindow = activeEditor == null ? 0 : new System.Windows.Interop.WindowInteropHelper(activeEditor).Handle;
         if (gameClient.ProcessId == 0 || gameClient.ProcessId != overlay.BoundProcessId)
         {
             overlay.Close();
             return;
         }
         overlay.UpdateVisibility(gameClient, mumbleSession.IsPlayable && projectFile != null, gameFrame, Environment.ProcessId, GameViewport.IsAttached);
+        UpdateHostedOverlayButton();
         UpdateHostedCodeVisibility();
         UpdateWorldProjection();
     }
@@ -149,8 +175,8 @@ public partial class MainWindow
             worldMarkers.Conceal();
             return;
         }
-        PollGameShortcuts(overlay.IsVisible && NativeGameWindow.IsGameInputActive(gameClient) && mumbleSession.IsPlayable);
-        if (!overlay.IsVisible || !mumbleSession.IsPlayable || !gameClient.TryBounds(out _) || !NativeGameWindow.IsForeground(gameClient, overlay.Handle, Environment.ProcessId))
+        PollGameShortcuts(overlay.IsRenderingActive && NativeGameWindow.IsGameInputActive(gameClient) && mumbleSession.IsPlayable);
+        if (!overlay.IsRenderingActive || !mumbleSession.IsPlayable || !gameClient.TryBounds(out _) || !NativeGameWindow.IsForeground(gameClient, overlay.Handle, Environment.ProcessId))
         {
             worldMarkers.Conceal();
             return;
@@ -169,10 +195,12 @@ public partial class MainWindow
 
     private void RefreshOverlayWorkspace()
     {
+        RebuildInteractions();
         if (overlay == null) return;
         var assets = pages.SelectMany(page => page.Xml.Descendants().Where(e => e.Name.LocalName is "POI" or "Trail").Select(e =>
-            new OverlayAsset(page.Name, ElementKey(e), Value(e, "DisplayName", Value(e, "name", AssetStem(e))), e.Name.LocalName, Value(e, "type"), Value(e, "MapID", "unspecified")))).ToList();
-        var targets = pages.SelectMany(page => page.Xml.Descendants("MarkerCategory").Select(c => new OverlayCategory(page.Name, CategoryFullPath(c), c.Attributes().Any(a => a.Name.LocalName.Equals("isSeparator", StringComparison.OrdinalIgnoreCase))))).ToList();
+            new OverlayAsset(page.Name, ElementKey(e), Value(e, "DisplayName", Value(e, "name", AssetStem(e))) + InteractionBadge(e), e.Name.LocalName, Value(e, "type"), Value(e, "MapID", "unspecified")))).ToList();
+        var targets = pages.SelectMany(page => page.Xml.Descendants("MarkerCategory").Select(c => new OverlayCategory(page.Name, CategoryFullPath(c),
+            Value(c, "isSeparator").Trim() == "1" || Value(c, "isSeparator").Trim().Equals("true", StringComparison.OrdinalIgnoreCase), Value(c, "copy").Length > 0))).ToList();
         overlay.SetEditableTrails(editableTrails);
         overlay.SetWorkspace(pages.Select(p => p.Name).ToList(), targets, assets);
         RefreshWorldMarkers();
@@ -218,13 +246,14 @@ public partial class MainWindow
             float F(string name, float fallback) => float.TryParse(E(name, fallback.ToString(CultureInfo.InvariantCulture)), NumberStyles.Float, CultureInfo.InvariantCulture, out var n) && float.IsFinite(n) ? n : fallback;
             uint argb = VisualAttributeMath.Color(E("color", "FFFFFFFF"));
             Color color = Color.FromArgb((byte)(argb >> 24), (byte)(argb >> 16), (byte)(argb >> 8), (byte)argb);
-            var style = new MarkerStyle(E("iconFile", ""), Math.Max(0.001f, F("iconSize", 1)), F("heightOffset", 0), F("alpha", 1), F("fadeNear", -1), F("fadeFar", -1), Math.Clamp(F("minSize", 5), 0, 4096), Math.Clamp(F("maxSize", 100), 0, 4096), color, VisualAttributeMath.Enabled(visible), VisualAttributeMath.Enabled(E("miniMapVisibility", "1")), VisualAttributeMath.Enabled(E("mapVisibility", "1")), Math.Clamp(F("mapDisplaySize", 20), 1, 256))
+            var style = new MarkerStyle(E("iconFile", ""), Math.Max(0, F("iconSize", 1)), F("heightOffset", MarkerPreviewMath.DefaultHeightOffset), F("alpha", 1), F("fadeNear", -1), F("fadeFar", -1), Math.Max(0, F("minSize", 5)), Math.Max(0, F("maxSize", 2048)), color, VisualAttributeMath.Enabled(visible), VisualAttributeMath.Enabled(E("miniMapVisibility", "1")), VisualAttributeMath.Enabled(E("mapVisibility", "1")), F("mapDisplaySize", 20))
             {
+                ScaleOnMapWithZoom = VisualAttributeMath.Enabled(E("scaleOnMapWithZoom", "1")),
                 GameScale = preferences.MarkerGameScale, MapScale = preferences.MarkerMapScale, MinimapScale = preferences.MarkerMinimapScale,
                 Rotation = VisualAttributeMath.Rotation(E("rotate", ""), E("rotate-x", ""), E("rotate-y", ""), E("rotate-z", "")),
-                Sticky = VisualAttributeMath.Enabled(E("screenSticky", "false")) ? new StickyStyle(F("stickyDistance", 350), VisualAttributeMath.Enabled(E("stickyHideOriginal", "true")), F("stickyX", 0), F("stickyY", 0), F("stickyScale", 1)) : null
+                Sticky = VisualAttributeMath.Enabled(E("screenSticky", "false")) ? new StickyStyle(F("stickyDistance", 300), VisualAttributeMath.Enabled(E("stickyHideOriginal", "true")), F("stickyX", 0), F("stickyY", 0), F("stickyScale", 1)) : null
             };
-            dots.Add(new(page.Name + "|" + ElementKey(poi), Value(poi, "DisplayName", Value(poi, "name", AssetStem(poi))), map, new Vector3(x, y, z), style) { Category = path });
+            dots.Add(new(page.Name + "|" + ElementKey(poi), Value(poi, "DisplayName", Value(poi, "name", AssetStem(poi))), map, new Vector3(x, y, z), style) { Category = path, InteractionBadge = InteractionBadge(poi) });
         }
         var lines = new List<WorldTrail>();
         foreach (var page in pages)
@@ -240,8 +269,9 @@ public partial class MainWindow
             lines.Add(new WorldTrail(trail, E("texture", ""), F("trailScale", 1), F("alpha", 1), F("fadeNear", -1), F("fadeFar", -1), F("heightOffset", 0), tint)
             {
                 Key = page.Name + "|" + ElementKey(e), Category = path, GameWidth = preferences.TrailGameWidth, MapWidth = preferences.TrailMapWidth, MinimapWidth = preferences.TrailMinimapWidth,
+                ScaleOnMapWithZoom = VisualAttributeMath.Enabled(E("scaleOnMapWithZoom", "1")),
                 AnimSpeed = F("animSpeed", 1), WorldVisible = VisualAttributeMath.Enabled(E("inGameVisibility", "1")),
-                MinimapVisible = VisualAttributeMath.Enabled(E("miniMapVisibility", "1")), MapVisible = VisualAttributeMath.Enabled(E("mapVisibility", "1")), MapSize = Math.Clamp(F("mapDisplaySize", 20), 1, 256)
+                MinimapVisible = VisualAttributeMath.Enabled(E("miniMapVisibility", "1")), MapVisible = VisualAttributeMath.Enabled(E("mapVisibility", "1")), MapSize = F("mapDisplaySize", 20)
             });
         }
         foreach (var reference in selectedTrailPoints)

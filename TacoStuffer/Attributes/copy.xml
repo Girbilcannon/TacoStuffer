@@ -1,0 +1,6 @@
+<AttributeGroup version="1" key="copy" displayName="Copy" appliesTo="POI,MarkerCategory">
+  <Attribute name="copy" default="" type="multiline" optional="false" />
+  <Attribute name="copy-message" default="'{0}' copied to clipboard." type="multiline" optional="true" />
+  <Attribute name="triggerRange" default="2" type="number" optional="true" />
+  <Attribute name="autoTrigger" default="false" type="bool" optional="true" />
+</AttributeGroup>

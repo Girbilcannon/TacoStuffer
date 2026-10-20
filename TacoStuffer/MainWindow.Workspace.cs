@@ -98,6 +98,12 @@ public partial class MainWindow
                 }
             });
         }
+        var codePage = codePages.FirstOrDefault(p => p.Tab == tab);
+        if (codePage != null)
+        {
+            Add("Rename document… (F2)", () => RenameCodeDocument(codePage));
+            Add("Delete document…", () => DeleteCodeDocuments([codePage]));
+        }
         Add("Close tab", () => CloseTab(tab));
         if (tab == GameTab)
         {
@@ -462,6 +468,12 @@ public partial class MainWindow
     {
         var menu = new ContextMenu();
         var rename = new MenuItem { Header = "Rename… (F2)" };
+        if (row.Element != null && Value(row.Element, "copy").Length > 0)
+        {
+            var copy = new MenuItem { Header = "Test Copy (category action)" };
+            copy.Click += (_, _) => TestElementCopy(row.Element);
+            menu.Items.Add(copy);
+        }
         rename.Click += (_, _) => QuickRename(row);
         menu.Items.Add(rename);
         var child = new MenuItem { Header = "New child category…" };
@@ -558,6 +570,12 @@ public partial class MainWindow
 
     private void QuickRename(ExplorerRow row)
     {
+        if (row.Kind == "code")
+        {
+            var code = codePages.FirstOrDefault(p => p.Name == row.DocumentName);
+            if (code != null) RenameCodeDocument(code);
+            return;
+        }
         if (row.Kind == "document")
         {
             var page = pages.FirstOrDefault(p => p.Name == row.DocumentName);

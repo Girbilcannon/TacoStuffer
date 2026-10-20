@@ -11,18 +11,25 @@ namespace TacoStuffer;
 
 public partial class MainWindow
 {
-    private sealed record CodePage(string Name, RichTextBox Editor, TabItem Tab);
+    private sealed record CodePage(string Name, ICSharpCode.AvalonEdit.TextEditor Editor, TabItem Tab, CodeDocumentView View);
 
     private readonly List<CodePage> codePages = [];
     private readonly List<string> importedAssets = [];
     private readonly Dictionary<string, (DateTime Stamp, EditableTrail Trail)> rawTrailPreview = new(StringComparer.OrdinalIgnoreCase);
     private void RegisterCode(ProjectCode source)
     {
-        var editor = new RichTextBox { FontFamily = new FontFamily("Consolas"), FontSize = 13, AcceptsTab = true, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto };
-        editor.Document = new FlowDocument(new Paragraph(new Run(source.Content)) { Margin = new Thickness(0) });
-        var tab = new TabItem { Content = editor };
-        codePages.Add(new(source.Name, editor, tab));
+        var view = new CodeDocumentView(source.Name, source.Content, () => projectFolder);
+        var editor = view.Editor;
+        var tab = new TabItem { Content = view };
+        codePages.Add(new(source.Name, editor, tab, view));
+        view.Editor.TextChanged += (_, _) => { if (!updating) StatusText.Text = view.DocumentName + " modified · Save Project to retain changes."; };
+        view.PreviewKeyDown += ProjectShortcut;
         SetTabHeader(tab, source.Name);
+        tab.PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key == System.Windows.Input.Key.F2 && codePages.FirstOrDefault(p => p.Tab == tab) is { } current)
+            { e.Handled = true; RenameCodeDocument(current); }
+        };
         // Code remains discoverable in Elements, including after its tab closes.
     }
 

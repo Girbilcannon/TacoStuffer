@@ -21,7 +21,7 @@ public static class TestPackBuilder
         return path;
     }
 
-    public static TestPackResult Build(string output, IReadOnlyList<(string Name, string Xml)> documents, string? projectFolder, IReadOnlyList<EditableTrail>? editableTrails = null, IReadOnlyList<string>? importedAssets = null, ProjectAssetPaths? assetPaths = null)
+    public static TestPackResult Build(string output, IReadOnlyList<(string Name, string Xml)> documents, string? projectFolder, IReadOnlyList<EditableTrail>? editableTrails = null, IReadOnlyList<string>? importedAssets = null, ProjectAssetPaths? assetPaths = null, IReadOnlyList<ProjectCode>? codeDocuments = null, bool includeDocumentation = true)
     {
         var folders = (assetPaths ?? new()).Validated();
         var entries = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
@@ -52,6 +52,7 @@ public static class TestPackBuilder
                 foreach (string file in ProjectAssetPaths.Files(projectFolder, folder))
                 {
                     string relative = PackPath(Path.GetRelativePath(projectFolder, file));
+                    if (!includeDocumentation && ProjectDocuments.IsDocumentation(relative)) continue;
                     if (!xmls.Any(d => d.Name.Equals(relative, StringComparison.OrdinalIgnoreCase))) entries.TryAdd(relative, File.ReadAllBytes(file));
                 }
             }
@@ -60,6 +61,7 @@ public static class TestPackBuilder
             foreach (string imported in importedAssets ?? [])
             {
                 string path = TacoImporter.PackPath(imported);
+                if (!includeDocumentation && ProjectDocuments.IsDocumentation(path)) continue;
                 string top = path.Split('/')[0];
                 if (top.Equals("EXPORT", StringComparison.OrdinalIgnoreCase) || top.Equals(EditableTrails.Folder, StringComparison.OrdinalIgnoreCase) || top.Equals("CUSTOM_ATTRIBUTES", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".cilantro", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Project storage cannot be packaged: " + path);
                 string assetRoot = Path.GetFullPath(projectFolder);
@@ -72,6 +74,14 @@ public static class TestPackBuilder
                 }
                 if (!entries.ContainsKey(path)) entries.Add(path, File.ReadAllBytes(full));
             }
+        foreach (var code in codeDocuments ?? [])
+        {
+            string path = PackPath(code.Name);
+            if (ProjectDocuments.Kind(path) == null) throw new InvalidOperationException("Unsupported source/document: " + path);
+            if (!includeDocumentation && ProjectDocuments.IsDocumentation(path)) continue;
+            // Use the current tracked text, including closed tabs, over any disk copy.
+            entries[path] = Encoding.UTF8.GetBytes(code.Content);
+        }
         var categories = xmls.SelectMany(d => d.Xml.Descendants("MarkerCategory")).GroupBy(CategoryOperations.PathOf).ToDictionary(g => g.Key, g => g.First());
         var compiledPaths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var doc in xmls)

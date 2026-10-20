@@ -45,11 +45,14 @@ public static class VisualAttributeMath
     {
         // Use double while scaling so extreme but finite XML values cannot
         // overflow into NaN before the image is fitted to the screen.
-        double w = Math.Max(1, (double)imageWidth * Math.Max(.001f, scale)), h = Math.Max(1, (double)imageHeight * Math.Max(.001f, scale));
-        double fit = Math.Min(1, Math.Min(screenWidth / w, screenHeight / h));
+        double factor = float.IsFinite(scale) ? Math.Clamp(scale, .01f, 10f) : 1;
+        double w = Math.Max(1d, imageWidth) * factor, h = Math.Max(1d, imageHeight) * factor;
+        double margin = Math.Min(12, Math.Max(0, Math.Min(screenWidth, screenHeight) / 2d - .5));
+        double availableWidth = Math.Max(1, screenWidth - 2 * margin), availableHeight = Math.Max(1, screenHeight - 2 * margin);
+        double fit = Math.Min(1, Math.Min(availableWidth / w, availableHeight / h));
         w *= fit;
         h *= fit;
-        return new((float)Math.Clamp(screenWidth / 2d + x - w / 2, 0, Math.Max(0, screenWidth - w)),
-            (float)Math.Clamp(screenHeight / 2d - y - h / 2, 0, Math.Max(0, screenHeight - h)), (float)w, (float)h);
+        return new((float)Math.Clamp(screenWidth / 2d + x - w / 2, margin, Math.Max(margin, screenWidth - margin - w)),
+            (float)Math.Clamp(screenHeight / 2d - y - h / 2, margin, Math.Max(margin, screenHeight - margin - h)), (float)w, (float)h);
     }
 }

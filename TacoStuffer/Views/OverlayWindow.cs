@@ -10,7 +10,7 @@ namespace TacoStuffer.Views;
 
 public sealed record OverlayAsset(string DocumentName, string Key, string Label, string Kind, string Category, string MapId);
 
-public sealed record OverlayCategory(string DocumentName, string Path, bool IsSeparator = false);
+public sealed record OverlayCategory(string DocumentName, string Path, bool IsSeparator = false, bool HasCopy = false);
 
 public sealed class OverlayWindow : PreviewDialog
 {
@@ -83,11 +83,20 @@ public sealed class OverlayWindow : PreviewDialog
     private bool updatingTargets;
     private List<OverlayAsset> assets = [];
     private GameClientWindow client;
-    private bool positioning;
-    private bool freePosition, freePositionInitialized;
+    private bool freePositionInitialized;
+    private bool compact;
+    private bool hostedMode;
+    private bool presentationAllowed;
+    private nint tooltipHandle;
+    public bool IsHostedMinimized => hostedMode && compact;
+    // Panel visibility and overlay-session activity are separate in Play in App.
+    public bool IsRenderingActive => presentationAllowed && (IsVisible || IsHostedMinimized);
+    public event Action? PresentationChanged;
+    public void RestoreControls() => SetCompact(false);
+    private object? expandedContent;
+    private double expandedWidth;
+    private NativeGameWindow.Rect expandedBounds;
     private bool rebuildingAssets;
-    private int offsetX = 24, offsetY = 24;
-    private int lastX = int.MinValue, lastY = int.MinValue;
     public int BoundProcessId { get; }
     public nint Handle => new WindowInteropHelper(this).Handle;
     public event Action<OverlayAsset>? AssetSelected;
@@ -103,6 +112,10 @@ public sealed class OverlayWindow : PreviewDialog
     public event Action<TrailSegmentRef>? DeleteSegmentRequested;
     public event Action<OverlayAsset>? DeleteAssetRequested;
     public event Action<OverlayAsset>? RenameAssetRequested;
+    public event Action<bool>? InteractionTestModeChanged;
+    public event Action? MarkerInteractionRequested;
+    public event Action<string, string>? CopyCategoryRequested;
+    public bool InteractionTestsEnabled { get; private set; }
     public event Action<int>? TrailSmoothnessChanged;
     public void InvokeShortcut(string action)
     {
@@ -112,6 +125,7 @@ public sealed class OverlayWindow : PreviewDialog
         }
         switch (action)
         {
+            case "interact": MarkerInteractionRequested?.Invoke(); break;
             case "category":
             string? xml = (tabs.SelectedIndex == 1 ? trailDocuments : markerDocuments).SelectedItem as string;
             string? path = (tabs.SelectedIndex == 1 ? trailCategories : markerCategories).SelectedItem as string;
@@ -148,6 +162,23 @@ public sealed class OverlayWindow : PreviewDialog
         WindowStartupLocation = WindowStartupLocation.Manual;
         Body.Margin = new Thickness(12);
         Body.Children.Add(telemetry);
+        var interactionTip = new ToolTip { Content = new TextBlock {
+            Text = "Test autoTrigger clipboard copying when entering a marker's trigger range, and copy actions on category/separator labels. Info popups are controlled separately in Preferences.",
+            TextWrapping = TextWrapping.Wrap, MaxWidth = 330 } };
+        interactionTip.Opened += (_, _) =>
+        {
+            tooltipHandle = (PresentationSource.FromVisual(interactionTip) as HwndSource)?.Handle ?? 0;
+            if (tooltipHandle != 0) NativeGameWindow.SetWindowPos(tooltipHandle, new nint(-1), 0, 0, 0, 0, 0x0013);
+        };
+        interactionTip.Closed += (_, _) => tooltipHandle = 0;
+        var interactionTests = new CheckBox { Content = "Test marker interactions", IsChecked = false,
+            ToolTip = interactionTip, Margin = new Thickness(0, 0, 0, 10) };
+        interactionTests.Click += (_, _) =>
+        {
+            InteractionTestsEnabled = interactionTests.IsChecked == true;
+            InteractionTestModeChanged?.Invoke(InteractionTestsEnabled);
+        };
+        Body.Children.Add(interactionTests);
         var grid = new Grid { Height = 460 };
         grid.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new() { Width = new GridLength(12) });
@@ -261,12 +292,10 @@ public sealed class OverlayWindow : PreviewDialog
             NativeGameWindow.DisableActivation(Handle);
             HwndSource.FromHwnd(Handle)?.AddHook(NoActivate);
         };
-        LocationChanged += (_, _) =>
-        {
-            if (positioning || freePosition || !IsVisible || !client.TryBounds(out var bounds) || !NativeGameWindow.GetWindowRect(Handle, out var own)) return;
-            offsetX = own.Left - bounds.Left;
-            offsetY = own.Top - bounds.Top;
-        };
+        var minimize = new Button { Content = "—", ToolTip = "Minimize overlay controls", Padding = new Thickness(12, 5, 12, 5), Margin = new Thickness(5) };
+        minimize.Click += (_, _) => SetCompact(true);
+        DockPanel.SetDock(minimize, Dock.Right);
+        CaptionBar.Children.Insert(0, minimize);
     }
 
     private static nint NoActivate(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
@@ -430,6 +459,12 @@ public sealed class OverlayWindow : PreviewDialog
                     TrailChosen?.Invoke(segment.Trail, segment.Segment);
                     SegmentSelected?.Invoke(segment);
                     UpdatePointHeaders();
+                    e.Handled = true;
+                }
+                else if (InteractionTestsEnabled && node.Tag is OverlayCategory action
+                    && targets.Any(t => t.DocumentName == action.DocumentName && t.Path == action.Path && t.IsSeparator && t.HasCopy))
+                {
+                    CopyCategoryRequested?.Invoke(action.DocumentName, action.Path);
                     e.Handled = true;
                 }
                 else if (e.ClickCount == 2 && node.Tag is OverlayCategory c)
@@ -671,6 +706,14 @@ public sealed class OverlayWindow : PreviewDialog
             {
                 string key = xml + "|" + path;
                 var node = new TreeViewItem { Header = path.Length == 0 ? "Unassigned" : path[(path.LastIndexOf('.') + 1)..], IsExpanded = false, Padding = new Thickness(3, 2, 3, 2), ToolTip = xml + " · " + path, Tag = new OverlayCategory(xml, path) };
+                if (targets.Any(t => t.DocumentName == xml && t.Path == path && t.HasCopy))
+                {
+                    var categoryMenu = new ContextMenu();
+                    var copyCategory = new MenuItem { Header = "Test Copy (category action)" };
+                    copyCategory.Click += (_, _) => CopyCategoryRequested?.Invoke(xml, path);
+                    categoryMenu.Items.Add(copyCategory);
+                    node.ContextMenu = categoryMenu;
+                }
                 folderNodes[key] = node;
                 Deferred(node, children[key].Any() || groupedAssets[key].Any(), () =>
                 {
@@ -824,17 +867,46 @@ public sealed class OverlayWindow : PreviewDialog
         return false;
     }
 
+    private void SetCompact(bool value)
+    {
+        if (compact == value) return;
+        compact = value;
+        if (value)
+        {
+            expandedContent = Content;
+            expandedWidth = Width;
+            NativeGameWindow.GetWindowRect(Handle, out expandedBounds);
+            var restore = new Button { Content = "TS", ToolTip = "Restore Taco Stuffer controls", Padding = new Thickness(0) };
+            restore.Click += (_, _) => SetCompact(false);
+            SizeToContent = SizeToContent.Manual;
+            Width = 44;
+            Height = 36;
+            Content = restore;
+        }
+        else
+        {
+            Content = expandedContent;
+            expandedContent = null;
+            Width = expandedWidth;
+            Height = double.NaN;
+            SizeToContent = SizeToContent.Height;
+            UpdateLayout();
+            NativeGameWindow.SetWindowPos(Handle, 0, expandedBounds.Left, expandedBounds.Top, 0, 0, 0x0015);
+        }
+        UpdateLayout();
+        // Standalone keeps a TS restore button; hosted mode hides only the controls.
+        // Recording, rendering and the selected interaction-test mode stay active.
+        UpdateVisibility(client, canRecord, null, Environment.ProcessId, NativeGameWindow.HostedGameOverlay);
+        PresentationChanged?.Invoke();
+    }
+
     public void EnsureHandle() => new WindowInteropHelper(this).EnsureHandle();
 
     public void UpdateVisibility(GameClientWindow game, bool playable, MumbleSnapshot? frame, int editorProcess, bool hosted = false)
     {
         client = game;
-        if (freePosition != hosted)
-        {
-            freePosition = hosted;
-            if (hosted && IsVisible) freePositionInitialized = true;
-            lastX = lastY = int.MinValue;
-        }
+        hostedMode = hosted;
+        presentationAllowed = false;
         canRecord = playable && game.TryBounds(out _);
         UpdateRecordButton();
         if (frame != null) telemetry.Text = frame.CharacterName + " · Map " + frame.MapId + "\n" + $"Mumble XYZ (Y-up)  {frame.AvatarPosition.X:F2}  {frame.AvatarPosition.Y:F2}  {frame.AvatarPosition.Z:F2}";
@@ -844,46 +916,37 @@ public sealed class OverlayWindow : PreviewDialog
             if (IsVisible) Hide();
             return;
         }
-        positioning = true;
-        try
+        presentationAllowed = true;
+        // A hosted minimize has no desktop TS button. The button bar restores it;
+        // IsRenderingActive keeps the world/session gates independent of Hide().
+        if (IsHostedMinimized)
         {
-            bool wasVisible = IsVisible;
+            if (IsVisible) Hide();
+            return;
+        }
+        {
             if (!IsVisible) Show(); // ShowActivated=false keeps the game's keyboard focus.
             if (!NativeGameWindow.IsForeground(game, Handle, editorProcess))
             {
+                presentationAllowed = false;
                 Topmost = false;
                 Hide();
                 return;
             }
             var transform = HwndSource.FromHwnd(Handle)?.CompositionTarget?.TransformToDevice ?? Matrix.Identity;
             int width = (int)(ActualWidth * transform.M11), height = (int)(ActualHeight * transform.M22);
-            if (freePosition)
+            if (!NativeGameWindow.GetWindowRect(Handle, out var own)) return;
+            int x = own.Left, y = own.Top;
+            if (!freePositionInitialized) { x = bounds.Left + 24; y = bounds.Top + 24; }
+            if (compact)
             {
-                Topmost = true;
-                if (!NativeGameWindow.IsTopmost(Handle)) NativeGameWindow.SetWindowPos(Handle, new nint(-1), 0, 0, 0, 0, 0x0053);
-                // Place once, then retain the user's desktop position across
-                // polling, pane resizing, game motion and hide/show cycles.
-                if (!freePositionInitialized)
-                {
-                    if (NativeGameWindow.SetWindowPos(Handle, new nint(-1), bounds.Left + 24, bounds.Top + 24, 0, 0, 0x0011))
-                        freePositionInitialized = true;
-                }
-                return;
+                var work = NativeGameWindow.MonitorWorkArea(game.Handle, bounds);
+                x = work.Right - width - 8;
+                y = work.Top + 8;
             }
-            int x = bounds.Left + Math.Clamp(offsetX, 0, Math.Max(0, bounds.Right - bounds.Left - width));
-            int y = bounds.Top + Math.Clamp(offsetY, 0, Math.Max(0, bounds.Bottom - bounds.Top - height));
-            bool reposition = !wasVisible || !Topmost || !NativeGameWindow.IsTopmost(Handle) || x != lastX || y != lastY;
-            Topmost = true;
-            if (reposition)
-            {
-                NativeGameWindow.SetWindowPos(Handle, new nint(-1), x, y, 0, 0, 0x0010 | 0x0001); // no activate, no resize
-                lastX = x;
-                lastY = y;
-            }
-        }
-        finally
-        {
-            positioning = false;
+            Topmost = NativeGameWindow.OcclusionFor(false) == 0;
+            if (NativeGameWindow.PlaceOverlay(Handle, tooltipHandle != 0 && NativeGameWindow.IsWindowVisible(tooltipHandle) ? tooltipHandle : NativeGameWindow.EditorOcclusionWindow, x, y, width, height, true))
+                freePositionInitialized = true;
         }
     }
 }

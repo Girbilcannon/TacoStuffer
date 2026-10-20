@@ -17,9 +17,10 @@ public partial class MainWindow
     private string? projectFile;
     private ProjectAssetPaths assetPaths = new();
     private string tacoOutputFolder = "";
+    private bool includeDocumentation = true;
     private string savedFingerprint = "";
     private long nextMarkerNumber = 1;
-    private string WorkspaceFingerprint() => ProjectTitle.Text + "\0" + tacoOutputFolder + "\0" + string.Join("\0", pages.Select(p => p.Name + "\0" + PageSource(p))) + "\0" + string.Join("\0", textureLabels.OrderBy(p => p.Key).Select(p => p.Key + "=" + p.Value)) + "\0" + string.Join("\0", categoryOrder) + "\0" + nextMarkerNumber + "\0" + nextTrailNumber + "\0" + string.Join("\0", editableTrails.Select(EditableTrails.Serialize)) + "\0" + string.Join("\0", codePages.Select(p => p.Name + "\0" + HistorySource(p.Editor))) + "\0" + assetPaths;
+    private string WorkspaceFingerprint() => ProjectTitle.Text + "\0" + includeDocumentation + "\0" + tacoOutputFolder + "\0" + string.Join("\0", pages.Select(p => p.Name + "\0" + PageSource(p))) + "\0" + string.Join("\0", textureLabels.OrderBy(p => p.Key).Select(p => p.Key + "=" + p.Value)) + "\0" + string.Join("\0", categoryOrder) + "\0" + nextMarkerNumber + "\0" + nextTrailNumber + "\0" + string.Join("\0", editableTrails.Select(EditableTrails.Serialize)) + "\0" + string.Join("\0", codePages.Select(p => p.Name + "\0" + p.Editor.Text)) + "\0" + assetPaths;
 
     private void InitializeProjectPersistence()
     {
@@ -37,7 +38,7 @@ public partial class MainWindow
         return prompt.Choice == "discard" || (prompt.Choice == "save" && SaveCurrentProject());
     }
 
-    private ProjectSnapshot CurrentSnapshot() => new(ProjectTitle.Text, tacoOutputFolder, pages.Select(p => new ProjectXml(p.Name, p.FormattedXml, TabOwner(p.Tab) != null || detachedTabs.ContainsKey(p.Tab))).ToList(), new Dictionary<string, string>(textureLabels, StringComparer.OrdinalIgnoreCase), new List<string>(categoryOrder), collapsedElements.ToList(), nextMarkerNumber, editableTrails.ToList(), nextTrailNumber, importedAssets.ToList(), codePages.Select(p => new ProjectCode(p.Name, HistorySource(p.Editor))).ToList(), assetPaths);
+    private ProjectSnapshot CurrentSnapshot() => new(ProjectTitle.Text, tacoOutputFolder, pages.Select(p => new ProjectXml(p.Name, p.FormattedXml, TabOwner(p.Tab) != null || detachedTabs.ContainsKey(p.Tab))).ToList(), new Dictionary<string, string>(textureLabels, StringComparer.OrdinalIgnoreCase), new List<string>(categoryOrder), collapsedElements.ToList(), nextMarkerNumber, editableTrails.ToList(), nextTrailNumber, importedAssets.ToList(), codePages.Select(p => new ProjectCode(p.Name, p.Editor.Text, ViewOpen(p.Tab))).ToList(), assetPaths, includeDocumentation);
 
     private static bool ProjectError(Exception ex) => ex is IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException or XmlException or ArgumentException;
 
@@ -170,6 +171,7 @@ public partial class MainWindow
         ComparisonDocuments.Items.Clear();
         pages.Clear();
         documentUse.Clear();
+        foreach (var code in codePages) code.View.ClosePreview();
         codePages.Clear();
         rawTrailPreview.Clear();
         selected = null;
@@ -181,6 +183,7 @@ public partial class MainWindow
         projectFile = file;
         projectFolder = Path.GetDirectoryName(file);
         tacoOutputFolder = snapshot.OutputFolder;
+        includeDocumentation = snapshot.IncludeDocumentation;
         ProjectTitle.Text = snapshot.Name;
         assetPaths = (snapshot.AssetPaths ?? ((snapshot.ImportedAssets?.Count ?? 0) > 0 ? ProjectAssetPaths.Infer(snapshot.Documents.Select(d => ParseXml(d.Content))) : new())).Validated();
         importedAssets.Clear();
@@ -226,7 +229,11 @@ public partial class MainWindow
         UpdateComparisonLayout();
         updating = false;
         xmlNumber = 2;
-        foreach (var code in snapshot.CodeDocuments ?? []) RegisterCode(code);
+        foreach (var code in snapshot.CodeDocuments ?? [])
+        {
+            RegisterCode(code);
+            if (code.Open && OpenDocumentTabs().Count() < 5) OpenTab(codePages[^1].Tab);
+        }
         catalog.Reload(projectFolder);
         RefreshExplorer();
         AttributesHost.Children.Clear();

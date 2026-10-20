@@ -12,7 +12,7 @@ public partial class MainWindow
     private bool inAppLayout, showHostedXml;
     private TabItem? activeHostedCodeTab;
     private HostedCodeWindow? hostedCodeWindow;
-    private RichTextBox? hostedEditor;
+    private FrameworkElement? hostedEditor;
     private Action? restoreHostedEditor;
     private void EnterInAppLayout()
     {
@@ -32,7 +32,7 @@ public partial class MainWindow
         ReleaseHostedEditor();
         hostedCodeWindow?.Hide();
         showHostedXml = false;
-        HostedXmlButton.Content = "Show XML";
+        HostedXmlButton.Content = "Show Code";
         if (!inAppLayout) return;
         inAppLayout = false;
         Documents.ClearValue(Control.TemplateProperty);
@@ -115,7 +115,7 @@ public partial class MainWindow
     private void ToggleHostedXml(object sender, RoutedEventArgs e)
     {
         showHostedXml = !showHostedXml;
-        HostedXmlButton.Content = showHostedXml ? "Hide XML" : "Show XML";
+        HostedXmlButton.Content = showHostedXml ? "Hide Code" : "Show Code";
         RequestPreviewPresentation();
         if (!showHostedXml)
         {
@@ -127,8 +127,8 @@ public partial class MainWindow
         if (activeHostedCodeTab == null)
         {
             showHostedXml = false;
-            HostedXmlButton.Content = "Show XML";
-            StatusText.Text = "Select an XML document in Elements first.";
+            HostedXmlButton.Content = "Show Code";
+            StatusText.Text = "Select a document in Elements first.";
             return;
         }
         OpenHostedDocument(activeHostedCodeTab);
@@ -140,7 +140,7 @@ public partial class MainWindow
         if (activeHostedCodeTab == null) return;
         var page = pages.FirstOrDefault(p => p.Tab == activeHostedCodeTab);
         var code = codePages.FirstOrDefault(p => p.Tab == activeHostedCodeTab);
-        var editor = page?.Editor ?? code?.Editor;
+        FrameworkElement? editor = page != null ? page.Editor : code?.View;
         string name = page?.Name ?? code?.Name ?? "XML";
         if (editor == null) return;
         if (hostedEditor == editor)
@@ -163,22 +163,26 @@ public partial class MainWindow
             restoreParent = () => control.Content = editor;
         }
         else return;
-        var background = editor.ReadLocalValue(Control.BackgroundProperty);
-        var border = editor.ReadLocalValue(Control.BorderThicknessProperty);
-        var horizontalScroll = editor.HorizontalScrollBarVisibility;
-        editor.Background = Brushes.Transparent;
-        editor.BorderThickness = new Thickness(0);
-        editor.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
         hostedEditor = editor;
-        restoreHostedEditor = () =>
+        if (editor is RichTextBox rich)
         {
-            if (background == DependencyProperty.UnsetValue) editor.ClearValue(Control.BackgroundProperty);
-            else editor.SetValue(Control.BackgroundProperty, background);
-            if (border == DependencyProperty.UnsetValue) editor.ClearValue(Control.BorderThicknessProperty);
-            else editor.SetValue(Control.BorderThicknessProperty, border);
-            editor.HorizontalScrollBarVisibility = horizontalScroll;
-            restoreParent();
-        };
+            var background = rich.ReadLocalValue(Control.BackgroundProperty);
+            var border = rich.ReadLocalValue(Control.BorderThicknessProperty);
+            var horizontalScroll = rich.HorizontalScrollBarVisibility;
+            rich.Background = Brushes.Transparent;
+            rich.BorderThickness = new Thickness(0);
+            rich.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+            restoreHostedEditor = () =>
+            {
+                if (background == DependencyProperty.UnsetValue) rich.ClearValue(Control.BackgroundProperty);
+                else rich.SetValue(Control.BackgroundProperty, background);
+                if (border == DependencyProperty.UnsetValue) rich.ClearValue(Control.BorderThicknessProperty);
+                else rich.SetValue(Control.BorderThicknessProperty, border);
+                rich.HorizontalScrollBarVisibility = horizontalScroll;
+                restoreParent();
+            };
+        }
+        else restoreHostedEditor = restoreParent;
         if (hostedCodeWindow == null)
         {
             hostedCodeWindow = new HostedCodeWindow(() => ToggleHostedXml(this, new RoutedEventArgs())) { Owner = this };

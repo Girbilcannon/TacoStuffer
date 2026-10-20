@@ -14,6 +14,7 @@ namespace TacoStuffer.Views;
 
 public sealed record MarkerStyle(string Icon, float Size, float Height, float Alpha, float FadeNear, float FadeFar, float MinSize, float MaxSize, Color Color, bool WorldVisible = true, bool MinimapVisible = true, bool MapVisible = true, float MapSize = 20)
 {
+    public bool ScaleOnMapWithZoom { get; init; } = true;
     public float GameScale { get; init; } = 1;
     public float MapScale { get; init; } = 1;
     public float MinimapScale { get; init; } = 1;
@@ -25,6 +26,7 @@ public sealed record StickyStyle(float Distance, bool HideOriginal, float X, flo
 
 public sealed record WorldMarker(string Key, string Label, uint MapId, Vector3 Position, MarkerStyle Style, bool IsTrailPoint = false)
 {
+    public string InteractionBadge { get; init; } = "";
     public string Category { get; init; } = "";
 }
 
@@ -32,6 +34,7 @@ public sealed record WorldTrail(EditableTrail Trail, string Texture, float Scale
 {
     public string Key { get; init; } = "";
     public string Category { get; init; } = "";
+    public bool ScaleOnMapWithZoom { get; init; } = true;
     public float GameWidth { get; init; } = 1;
     public float MapWidth { get; init; } = 1;
     public float MinimapWidth { get; init; } = 1;
@@ -84,6 +87,7 @@ public sealed class WorldMarkerWindow : Window
     public void ApplyVisualPreferences(EditorPreferences preferences)
     {
         surface.VisualPreferences = preferences.Copy();
+        gpuTrails?.Invalidate();
         surface.InvalidateVisual();
     }
     public void SetNameSelection(IEnumerable<string> keys)
@@ -234,7 +238,7 @@ public sealed class WorldMarkerWindow : Window
         // layered/transparent style routes the actual click through to GW2.
         bool fromGpu = gpuTrails != null && gpuTrails.Handle != 0 && root == gpuTrails.Handle;
         if (!IsVisible || (!NativeGameWindow.IsGameRoot(currentGame, root) && root != Handle && !fromGpu) || !currentGame.TryBounds(out var bounds) || !Contains(bounds, point)) return;
-        if (NativeGameWindow.GetWindowRect(currentPanel, out var panelBounds) && Contains(panelBounds, point)) return;
+        if (NativeGameWindow.IsWindowVisible(currentPanel) && NativeGameWindow.GetWindowRect(currentPanel, out var panelBounds) && Contains(panelBounds, point)) return;
         if (InteractiveExclusionHandle != 0 && NativeGameWindow.GetWindowRect(InteractiveExclusionHandle, out var codeBounds) && Contains(codeBounds, point)) return;
         var hit = surface.Hit(PointFromScreen(new Point(point.X, point.Y)));
         if (drag == null && hit == null && SelectedKey != null)
@@ -264,13 +268,13 @@ public sealed class WorldMarkerWindow : Window
             Conceal();
             return;
         }
-        bool positionChanged = !wasVisible || !Topmost || !NativeGameWindow.IsWindowVisible(Handle) || !NativeGameWindow.IsTopmost(Handle)
+        bool positionChanged = !wasVisible || !NativeGameWindow.IsWindowVisible(Handle) || !NativeGameWindow.HasCorrectOverlayBand(Handle, true)
             || !bounds.Equals(previousBounds) || InteractiveExclusionHandle != previousExclusionHandle;
-        Topmost = true;
+        Topmost = NativeGameWindow.OcclusionFor(true) == 0;
         if (positionChanged || presentationRepair)
         {
             if (NativeGameWindow.PlaceOverlay(Handle, InteractiveExclusionHandle != 0 ? InteractiveExclusionHandle : panel,
-                bounds.Left, bounds.Top, bounds.Right - bounds.Left, bounds.Bottom - bounds.Top, true))
+                bounds.Left, bounds.Top, bounds.Right - bounds.Left, bounds.Bottom - bounds.Top, true, gameSurface: true))
             {
                 previousBounds = bounds;
                 previousExclusionHandle = InteractiveExclusionHandle;
@@ -290,7 +294,7 @@ public sealed class WorldMarkerWindow : Window
             }
             if (mouseObserver?.IsActive != true && down && !previousButtonDown)
                 ObserveButton(true, cursor, NativeGameWindow.GetForegroundWindow());
-            bool overPanel = NativeGameWindow.GetWindowRect(panel, out var panelBounds) && Contains(panelBounds, cursor);
+            bool overPanel = NativeGameWindow.IsWindowVisible(panel) && NativeGameWindow.GetWindowRect(panel, out var panelBounds) && Contains(panelBounds, cursor);
             overPanel |= InteractiveExclusionHandle != 0 && NativeGameWindow.GetWindowRect(InteractiveExclusionHandle, out var codeBounds) && Contains(codeBounds, cursor);
             var hit = !overPanel && Contains(bounds, cursor) ? surface.Hit(mouse) : null;
             if (drag != null) surface.SetHandleHighlight(drag.Key, drag.Axis);
@@ -309,7 +313,7 @@ public sealed class WorldMarkerWindow : Window
         {
             try
             {
-                gpuTrails.Render(bounds, Handle, camera, surface.Trails, surface.ProjectFolder, surface.DragPositions, cameraChanged || positionChanged);
+                gpuTrails.Render(bounds, Handle, camera, surface.Trails, surface.ProjectFolder, surface.DragPositions, cameraChanged || positionChanged, surface.VisualPreferences.MapTrailStyle);
             }
             catch (Exception ex) when (ex is System.Runtime.InteropServices.ExternalException or ArgumentException or InvalidOperationException or NotSupportedException or OverflowException or IOException or UnauthorizedAccessException)
             {
@@ -488,7 +492,7 @@ public sealed class WorldMarkerWindow : Window
         {
             var liveSegments = Trails.SelectMany(t => t.Trail.Segments).ToHashSet();
             foreach (var segment in mapTrailGeometry.Keys.Where(s => !liveSegments.Contains(s)).ToArray()) mapTrailGeometry.Remove(segment);
-            foreach (var style in Markers.Select(m => m.Style).Concat(UseGpuTrails ? Enumerable.Empty<MarkerStyle>() : Trails.Select(t => new MarkerStyle(t.Texture, 1, 0, 1, -1, -1, 1, 100, t.Color))).DistinctBy(s => s.Icon + "|" + s.Color))
+            foreach (var style in Markers.Select(m => m.Style).Concat(UseGpuTrails ? Enumerable.Empty<MarkerStyle>() : Trails.SelectMany(t => new[] { new MarkerStyle(t.Texture, 1, 0, 1, -1, -1, 1, 100, t.Color), new MarkerStyle(t.Texture, 1, 0, 1, -1, -1, 1, 100, Colors.White) })).DistinctBy(s => s.Icon + "|" + s.Color))
             {
                 string key = style.Icon + "|" + style.Color;
                 DateTime stamp = default;
@@ -502,15 +506,17 @@ public sealed class WorldMarkerWindow : Window
                 var version = (ProjectFolder ?? "", stamp);
                 if (!iconVersions.TryGetValue(key, out var old) || old != version)
                 {
+                    if (icons.TryGetValue(key, out var stale) && stale != null) sampledColors.Remove(stale);
                     icons.Remove(key);
                     trailBrushes.Remove(key);
                     iconVersions[key] = version;
                 }
                 Icon(style);
             }
-            var active = Markers.Select(m => m.Style.Icon + "|" + m.Style.Color).Concat(Trails.Select(t => t.Texture + "|" + t.Color)).ToHashSet();
+            var active = Markers.Select(m => m.Style.Icon + "|" + m.Style.Color).Concat(Trails.SelectMany(t => new[] { t.Texture + "|" + t.Color, t.Texture + "|" + Colors.White })).ToHashSet();
             foreach (string key in icons.Keys.Where(k => !active.Contains(k)).ToList())
             {
+                if (icons.TryGetValue(key, out var stale) && stale != null) sampledColors.Remove(stale);
                 icons.Remove(key);
                 trailBrushes.Remove(key);
                 iconVersions.Remove(key);
@@ -551,7 +557,7 @@ public sealed class WorldMarkerWindow : Window
         {
             if (Camera == null) return 0;
             float depth = Vector3.Dot(position - Camera.CameraPosition, Vector3.Normalize(Camera.CameraFront));
-            return Math.Max(CameraProjection.NearClip, depth) * 2 * MathF.Tan(Camera.Fov * 0.5f) / Math.Max(1, (float)ActualHeight);
+            return Math.Max(CameraProjection.NearClip, depth) * 2 * MathF.Tan((Camera.Fov is > .1f and < 3 ? Camera.Fov : CameraProjection.DefaultFov) * 0.5f) / Math.Max(1, (float)ActualHeight);
         }
 
         private readonly Dictionary<string, ImageSource> defaultTints = [];
@@ -590,7 +596,8 @@ public sealed class WorldMarkerWindow : Window
 
         private ImageSource? Icon(MarkerStyle style)
         {
-            if (style.Icon.Length == 0 || ProjectFolder == null) return DefaultTint(style.Color, false);
+            if (style.Icon.Length == 0) return DefaultTint(style.Color, false);
+            if (ProjectFolder == null) return null;
             string key = style.Icon + "|" + style.Color;
             if (icons.TryGetValue(key, out var found)) return found;
             try
@@ -660,7 +667,11 @@ public sealed class WorldMarkerWindow : Window
                 var position = raw + Vector3.UnitY * marker.Style.Height;
                 if (marker.MapId != Camera.MapId || !CameraProjection.TryProject(Camera, position, (float)ActualWidth, (float)ActualHeight, out var screen)) continue;
                 double alpha = MarkerPreviewMath.Opacity(marker.Style.Alpha, Vector3.Distance(position, Camera.CameraPosition), marker.Style.FadeNear, marker.Style.FadeFar);
-                double radius = marker.IsTrailPoint ? 6 : Math.Clamp(marker.Style.Size * 0.5 / UnitsPerPixel(position), marker.Style.MinSize, Math.Max(marker.Style.MinSize, marker.Style.MaxSize)) * marker.Style.GameScale;
+                var markerDpi = VisualTreeHelper.GetDpi(this);
+                float fov = Camera.Fov is > .1f and < 3 ? Camera.Fov : CameraProjection.DefaultFov;
+                float focal = (float)(ActualHeight * markerDpi.DpiScaleY) / (2 * MathF.Tan(fov / 2));
+                float depth = Vector3.Dot(position - Camera.CameraPosition, Vector3.Normalize(Camera.CameraFront));
+                double radius = marker.IsTrailPoint ? 6 : ScaleNormalization.WorldHalf(focal, depth, marker.Style.Size, marker.Style.GameScale, marker.Style.MinSize, marker.Style.MaxSize) / markerDpi.DpiScaleX;
                 var rect = new Rect(screen.X - radius, screen.Y - radius, radius * 2, radius * 2);
                 if (rect.Right < 0 || rect.Bottom < 0 || rect.Left > ActualWidth || rect.Top > ActualHeight) continue;
                 if (alpha > 0 && marker.Style.Color.A > 0)
@@ -675,6 +686,20 @@ public sealed class WorldMarkerWindow : Window
                     drawing.DrawRectangle(HitBrush, null, hit);
                 }
 
+                if (marker.InteractionBadge.Length > 0)
+                {
+                    // Editor-only proxy: blank/transparent pack artwork remains untouched.
+                    drawing.DrawEllipse(LabelBackground, new Pen(Purple, 2), new Point(screen.X, screen.Y), 7, 7);
+                    var proxy = new Rect(screen.X - 10, screen.Y - 10, 20, 20);
+                    hits.Add(new(marker.Key, -2, proxy, default, default));
+                    drawing.DrawRectangle(HitBrush, null, proxy);
+                    var badge = new FormattedText(marker.InteractionBadge.Trim(), CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 11, Purple, dpi);
+                    var badgeBounds = new Rect(screen.X + 10, screen.Y + 8, badge.Width + 6, badge.Height + 2);
+                    drawing.DrawRoundedRectangle(LabelBackground, null, badgeBounds, 3, 3);
+                    hits.Add(new(marker.Key, -2, badgeBounds, default, default));
+                    drawing.DrawRectangle(HitBrush, null, badgeBounds);
+                    drawing.DrawText(badge, new Point(screen.X + 13, screen.Y + 9));
+                }
                 if (VisualPreferences.ShouldShowMarkerName(selected || NameSelectedKeys.Contains(marker.Key), Camera.AvatarPosition, raw))
                 {
                     if (!labels.TryGetValue(marker.Key, out var text)) labels[marker.Key] = text = new FormattedText(marker.Label, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 12, Purple, dpi);
@@ -775,8 +800,15 @@ public sealed class WorldMarkerWindow : Window
                 foreach (var line in Trails)
                 {
                     if (line.Trail.MapId != Camera.MapId || (full ? !line.MapVisible : !line.MinimapVisible)) continue;
-                    var brush = TrailBrush(line.Texture, line.Color);
-                    float ribbonWidth = MapRibbonProjection.Width(line.MapSize, Camera.Compass.UiSize) * (full ? line.MapWidth : line.MinimapWidth);
+                    // An explicit missing/loading map texture must never turn into a fallback band.
+                    var source = line.Texture.Length > 0 ? Icon(new MarkerStyle(line.Texture, 1, 0, 1, -1, -1, 1, 100, Colors.White)) : DefaultTint(Colors.White, true);
+                    if (source == null) continue;
+                    float user = full ? line.MapWidth : line.MinimapWidth;
+                    bool solid = VisualPreferences.MapTrailStyle == MapTrailVisualStyle.BlishHud;
+                    float ribbonWidth = solid ? ScaleNormalization.SolidWidth(Camera.Compass.UiSize, user)
+                        : ScaleNormalization.MapTrailWidth(line.MapSize, Camera.Compass.Scale, line.ScaleOnMapWithZoom, Camera.Compass.UiSize, user, line.Scale);
+                    Pen? solidPen = solid ? SolidTrailPen(line, source, ribbonWidth / dpi.DpiScaleX) : null;
+                    var brush = solid ? Brushes.Transparent : TrailBrush(line.Texture, line.Color);
                     float uvScale = MapRibbonProjection.UvScale(basis, ribbonWidth, line.Scale);
                     float phase = VisualAttributeMath.AnimationOffset(System.Diagnostics.Stopwatch.GetElapsedTime(animationStart).TotalSeconds, line.AnimSpeed);
                     drawing.PushOpacity(Math.Clamp(line.Alpha, 0, 1));
@@ -790,7 +822,14 @@ public sealed class WorldMarkerWindow : Window
                                 var p = basis.ProjectSide(v.Position, v.Center, ribbonWidth * .5f);
                                 return new(p.X / (float)dpi.DpiScaleX, p.Y / (float)dpi.DpiScaleY);
                             }
-                            Vector2 Uv(TrailGpuVertex v) => new(v.Uv.X, v.Uv.Y * uvScale + phase);
+                            Vector2 Uv(TrailGpuVertex v) => new(v.Uv.X, v.MapDistance * uvScale + phase);
+                            if (solidPen != null)
+                            {
+                                var start = basis.Project(vertices[i].Center);
+                                var end = basis.Project(vertices[i + 2].Center);
+                                drawing.DrawLine(solidPen, new Point(start.X / dpi.DpiScaleX, start.Y / dpi.DpiScaleY), new Point(end.X / dpi.DpiScaleX, end.Y / dpi.DpiScaleY));
+                                continue;
+                            }
                             var a = Screen(vertices[i]);
                             var b = Screen(vertices[i + 1]);
                             var c = Screen(vertices[i + 2]);
@@ -811,7 +850,7 @@ public sealed class WorldMarkerWindow : Window
                 if (marker.IsTrailPoint || marker.MapId != Camera.MapId || (full ? !marker.Style.MapVisible : !marker.Style.MinimapVisible)) continue;
                 if (!MapProjection.TryProject(Camera, PreviewPosition(marker.Key, marker.Position), viewport, width, height, out var screen)) continue;
                 double x = screen.X / dpi.DpiScaleX, y = screen.Y / dpi.DpiScaleY;
-                double radius = marker.Style.MapSize * (full ? marker.Style.MapScale : marker.Style.MinimapScale) * 0.5 * MapProjection.UiScale(Camera.Compass.UiSize) / dpi.DpiScaleX;
+                double radius = ScaleNormalization.MapIconHalf(marker.Style.MapSize, Camera.Compass.Scale, marker.Style.ScaleOnMapWithZoom, Camera.Compass.UiSize, full ? marker.Style.MapScale : marker.Style.MinimapScale) / dpi.DpiScaleX;
                 var rect = new Rect(x - radius, y - radius, radius * 2, radius * 2);
                 if (!rect.IntersectsWith(area)) continue;
                 drawing.PushOpacity(Math.Clamp(marker.Style.Alpha, 0, 1));
@@ -831,7 +870,7 @@ public sealed class WorldMarkerWindow : Window
             {
                 foreach (var line in Trails)
                 {
-                    if (!line.WorldVisible || line.Trail.MapId != Camera.MapId || line.Color.A == 0 || line.Alpha <= 0) continue;
+                    if (!line.WorldVisible || line.Scale <= 0 || line.Trail.MapId != Camera.MapId || line.Color.A == 0 || line.Alpha <= 0) continue;
                     foreach (var segment in line.Trail.Segments)
                     {
                         var reference = new TrailSegmentRef(line.Trail.Number, segment.Id);
@@ -843,7 +882,7 @@ public sealed class WorldMarkerWindow : Window
                             if (!EditableTrails.Finite(a) || !EditableTrails.Finite(b) || direction.LengthSquared() < .000000000001f
                                 || MarkerPreviewMath.Opacity(line.Alpha, Vector3.Distance((a + b) / 2, Camera.CameraPosition), line.FadeNear, line.FadeFar) <= 0) continue;
                             var side = Vector3.Cross(direction, Vector3.UnitY);
-                            side = (side.LengthSquared() < .000001f ? Vector3.UnitX : Vector3.Normalize(side)) * (.508f * line.GameWidth);
+                            side = (side.LengthSquared() < .000001f ? Vector3.UnitX : Vector3.Normalize(side)) * (.508f * Math.Max(0, line.Scale) * line.GameWidth);
                             // These are the same two ribbon triangles used by GPU and WPF rendering.
                             for (int half = 0; half < 2; half++)
                             {
@@ -882,7 +921,7 @@ public sealed class WorldMarkerWindow : Window
             Span<RibbonVertex> clipped = stackalloc RibbonVertex[12];
             foreach (var line in Trails)
             {
-                if (line.Trail.MapId != Camera.MapId || !line.WorldVisible) continue;
+                if (line.Trail.MapId != Camera.MapId || !line.WorldVisible || line.Scale <= 0) continue;
                 var brush = TrailBrush(line.Texture, line.Color);
                 float offset = VisualAttributeMath.AnimationOffset(System.Diagnostics.Stopwatch.GetElapsedTime(animationStart).TotalSeconds, line.AnimSpeed);
                 foreach (var segment in line.Trail.Segments)
@@ -898,14 +937,14 @@ public sealed class WorldMarkerWindow : Window
                         var side = Vector3.Cross(direction, Vector3.UnitY);
                         if (distance < 0.000001f) continue;
                         side = side.LengthSquared() < 0.000001f ? Vector3.UnitX * 0.508f : Vector3.Normalize(side) * 0.508f;
-                        side *= line.GameWidth;
+                        side *= Math.Max(0, line.Scale) * line.GameWidth;
                         double alpha = MarkerPreviewMath.Opacity(line.Alpha, Vector3.Distance((a + b) / 2, Camera.CameraPosition), line.FadeNear, line.FadeFar);
                         if (alpha <= 0)
                         {
                             length += distance;
                             continue;
                         }
-                        float scale = Math.Max(0.001f, Math.Abs(line.Scale)) * 2 / line.GameWidth;
+                        float scale = 1 / ScaleNormalization.WorldRepeatMeters;
                         drawn++;
                         drawing.PushOpacity(alpha);
                         DrawClippedTriangle(drawing, brush, projector, new(a - side, new(0, -length * scale + offset)), new(a + side, new(1, -length * scale + offset)), new(b + side, new(1, -(length + distance) * scale + offset)), clipped);
@@ -924,6 +963,28 @@ public sealed class WorldMarkerWindow : Window
         }
 
         private Vector3 TrailPosition(long trail, long segment, TrailPoint point) => DragPositions == null ? point.Position : PreviewPosition($"point|{trail}|{segment}|{point.Id}", point.Position);
+
+        private readonly Dictionary<ImageSource, uint> sampledColors = [];
+        private Pen SolidTrailPen(WorldTrail line, ImageSource image, double width)
+        {
+            if (!sampledColors.TryGetValue(image, out uint sample))
+            {
+                if (image is BitmapSource bitmap)
+                {
+                    var converted = new FormatConvertedBitmap(bitmap, PixelFormats.Bgra32, null, 0);
+                    int stride = checked(converted.PixelWidth * 4);
+                    byte[] pixels = new byte[checked(stride * converted.PixelHeight)];
+                    converted.CopyPixels(pixels, stride, 0);
+                    sample = ScaleNormalization.AverageColor(pixels);
+                }
+                sampledColors[image] = sample;
+            }
+            uint xml = (uint)(line.Color.A << 24 | line.Color.R << 16 | line.Color.G << 8 | line.Color.B);
+            uint value = ScaleNormalization.SolidColor(xml, sample);
+            var pen = new Pen(new SolidColorBrush(Color.FromArgb((byte)(value >> 24), (byte)(value >> 16), (byte)(value >> 8), (byte)value)), width);
+            pen.Freeze();
+            return pen;
+        }
 
         private Brush TrailBrush(string texture, Color color)
         {

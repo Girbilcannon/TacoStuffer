@@ -13,11 +13,17 @@ public sealed record KeyChord(int VirtualKey, int Modifiers, string KeyName)
     public string Display => ((Modifiers & 2) != 0 ? "Ctrl + " : "") + ((Modifiers & 4) != 0 ? "Shift + " : "") + ((Modifiers & 1) != 0 ? "Alt + " : "") + KeyName;
 }
 
+public enum MapTrailVisualStyle { Taco, BlishHud }
+
 public sealed class EditorPreferences
 {
+    public int ScaleBaselineV1 { get; set; } = 1;
+    public MapTrailVisualStyle MapTrailStyle { get; set; } = MapTrailVisualStyle.Taco;
     public const float DefaultMarkerNameDistance = 3500;
     public const float MaxMarkerNameDistance = 5000;
     public bool ShowMarkerNames { get; set; } = true;
+    public bool ShowMarkerInformation { get; set; } = true;
+    public MarkerClipboardMode MarkerClipboard { get; set; } = MarkerClipboardMode.Always;
     public bool OnlyShowForSelected { get; set; } = true;
     public float MarkerNameDistanceThreshold { get; set; } = DefaultMarkerNameDistance;
     public TrailSelectionMode TrailOverlaySelection { get; set; } = TrailSelectionMode.Trail;
@@ -28,7 +34,7 @@ public sealed class EditorPreferences
     public float TrailGameWidth { get; set; } = 1;
     public float TrailMapWidth { get; set; } = 1;
     public float TrailMinimapWidth { get; set; } = 1;
-    public static float ValidMultiplier(float value) => float.IsFinite(value) ? Math.Clamp(value, .25f, 4f) : 1;
+    public static float ValidMultiplier(float value) => float.IsFinite(value) ? Math.Clamp(value, .25f, 3f) : 1;
     public static float ValidNameDistance(float value) => float.IsFinite(value) ? Math.Clamp(value, 0, MaxMarkerNameDistance) : DefaultMarkerNameDistance;
 
     public bool ShouldShowMarkerName(bool selected, Vector3 player, Vector3 marker)
@@ -41,7 +47,9 @@ public sealed class EditorPreferences
 
     public void NormalizeVisuals()
     {
+        if (!Enum.IsDefined(MapTrailStyle)) MapTrailStyle = MapTrailVisualStyle.Taco;
         MarkerNameDistanceThreshold = ValidNameDistance(MarkerNameDistanceThreshold);
+        if (!Enum.IsDefined(MarkerClipboard)) MarkerClipboard = MarkerClipboardMode.Always;
         if (!Enum.IsDefined(TrailOverlaySelection)) TrailOverlaySelection = TrailSelectionMode.Trail;
         MarkerGameScale = ValidMultiplier(MarkerGameScale);
         MarkerMapScale = ValidMultiplier(MarkerMapScale);
@@ -53,7 +61,11 @@ public sealed class EditorPreferences
 
     public void ResetDefaults()
     {
+        MapTrailStyle = MapTrailVisualStyle.Taco;
+        ScaleBaselineV1 = 1;
         ShowMarkerNames = OnlyShowForSelected = true;
+        ShowMarkerInformation = true;
+        MarkerClipboard = MarkerClipboardMode.Always;
         MarkerNameDistanceThreshold = DefaultMarkerNameDistance;
         TrailOverlaySelection = TrailSelectionMode.Trail;
         Keybinds.Clear();
@@ -69,7 +81,8 @@ public sealed class EditorPreferences
     public static readonly IReadOnlyList<EditorAction> Actions = [
     new("category", "Add Category"), new("marker", "Record New Marker"), new("reposition", "Reposition Marker (To Character)"),
     new("trail", "Create New Trail File"), new("start", "Start recording Trail"), new("pause", "Pause Trail Recording"),
-    new("continue", "Continue Trail Recording"), new("segment", "Start Recording New Trail Segment"), new("stop", "Stop Recording Trail")];
+    new("continue", "Continue Trail Recording"), new("segment", "Start Recording New Trail Segment"), new("stop", "Stop Recording Trail"),
+    new("interact", "Copy nearby marker text (preview)")];
     public static bool Reserved(KeyChord chord) => chord.Modifiers == 2 && chord.VirtualKey is 78 or 79 or 83 or 90 or 70
         || chord.Modifiers == 6 && chord.VirtualKey == 90
         || chord.VirtualKey is 27 or 46 or 113;
@@ -88,7 +101,9 @@ public sealed class EditorPreferences
 
     public EditorPreferences Copy() => new()
     {
+        ScaleBaselineV1 = ScaleBaselineV1, MapTrailStyle = MapTrailStyle,
         GameExecutablePath = GameExecutablePath, ShowMarkerNames = ShowMarkerNames, OnlyShowForSelected = OnlyShowForSelected,
+        ShowMarkerInformation = ShowMarkerInformation, MarkerClipboard = MarkerClipboard,
         MarkerNameDistanceThreshold = MarkerNameDistanceThreshold, TrailOverlaySelection = TrailOverlaySelection,
         Keybinds = new(Keybinds), MarkerGameScale = MarkerGameScale, MarkerMapScale = MarkerMapScale,
         MarkerMinimapScale = MarkerMinimapScale, TrailGameWidth = TrailGameWidth, TrailMapWidth = TrailMapWidth, TrailMinimapWidth = TrailMinimapWidth
@@ -113,7 +128,20 @@ public sealed class EditorPreferences
         if (result.Keybinds.TryGetValue(action.Id, out var key) && key != null && Valid(key) && !Reserved(key)
             && !clean.Values.Any(k => k.VirtualKey == key.VirtualKey && k.Modifiers == key.Modifiers)) clean[action.Id] = key;
         result.Keybinds = clean;
+        bool migrate = !doc.RootElement.EnumerateObject().Any(p => p.Name.Equals("ScaleBaselineV1", StringComparison.OrdinalIgnoreCase)) || result.ScaleBaselineV1 < 1;
+        if (migrate)
+        {
+            // Remove old renderer compensation once; preserve unrelated preferences.
+            result.MarkerGameScale = result.MarkerMapScale = result.MarkerMinimapScale = 1;
+            result.TrailGameWidth = result.TrailMapWidth = result.TrailMinimapWidth = 1;
+            result.ScaleBaselineV1 = 1;
+        }
         result.NormalizeVisuals();
+        if (migrate)
+        {
+            try { result.Save(file); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { System.Diagnostics.Debug.WriteLine(ex); }
+        }
         return result;
     }
 

@@ -70,7 +70,7 @@ internal sealed unsafe class GpuTrailRenderer : IDisposable
         try
         {
             D3D.ValidateAbi();
-            if (sizeof(FrameConstants) != 192 || sizeof(TrailGpuVertex) != 32) throw new NotSupportedException("Trail shader layout mismatch.");
+            if (sizeof(FrameConstants) != 192 || sizeof(TrailGpuVertex) != 36) throw new NotSupportedException("Trail shader layout mismatch.");
             // Hardware only: no WARP fallback that disguises CPU rendering.
             D3D.Check(D3D.D3D11CreateDevice(0, 1, 0, 0x20, 0, 0, 7, out device, out uint featureLevel, out context));
             if (featureLevel < 0xa000) throw new NotSupportedException("Direct3D feature level 10.0 or later is required.");
@@ -175,7 +175,7 @@ internal sealed unsafe class GpuTrailRenderer : IDisposable
     }
 
     public void Render(NativeGameWindow.Rect placement, nint above, MumbleSnapshot camera,
-        IReadOnlyList<WorldTrail> trails, string? folder, IReadOnlyDictionary<string, Vector3>? preview, bool cameraChanged)
+        IReadOnlyList<WorldTrail> trails, string? folder, IReadOnlyDictionary<string, Vector3>? preview, bool cameraChanged, MapTrailVisualStyle mapStyle = MapTrailVisualStyle.Taco)
     {
         if (disposed) return;
         bool fullMap = (camera.UiState & 1) != 0;
@@ -205,10 +205,10 @@ internal sealed unsafe class GpuTrailRenderer : IDisposable
         }
         mapReady = MapRibbonProjection.TryBasis(camera, width, height, out mapBasis);
         bool reposition = presentationRepair || !shown || !NativeGameWindow.IsWindowVisible(window)
-            || !NativeGameWindow.IsTopmost(window) || !bounds.Equals(placement) || previousAbove != above;
+            || !NativeGameWindow.HasCorrectOverlayBand(window, true) || !bounds.Equals(placement) || previousAbove != above;
         if (reposition)
         {
-            if (NativeGameWindow.PlaceOverlay(window, above, placement.Left, placement.Top, (int)width, (int)height, shown))
+            if (NativeGameWindow.PlaceOverlay(window, above, placement.Left, placement.Top, (int)width, (int)height, shown, gameSurface: true))
             {
                 bounds = placement;
                 previousAbove = above;
@@ -217,7 +217,7 @@ internal sealed unsafe class GpuTrailRenderer : IDisposable
             // Reordering existing DirectComposition content is independent of
             // scene/mesh/texture invalidation. Preserve all cached buffers.
         }
-        if (!dirty && !cameraChanged && shown && !trails.Any(t => t.Trail.MapId == camera.MapId && t.AnimSpeed != 0 && ((!fullMap && t.WorldVisible) || (mapReady && (fullMap ? t.MapVisible : t.MinimapVisible))))) return;
+        if (!dirty && !cameraChanged && shown && !trails.Any(t => t.Trail.MapId == camera.MapId && t.AnimSpeed != 0 && ((!fullMap && t.WorldVisible) || (mapStyle == MapTrailVisualStyle.Taco && mapReady && (fullMap ? t.MapVisible : t.MinimapVisible))))) return;
         long started = Stopwatch.GetTimestamp();
         int rebuilt = 0, draws = 0;
         // Resolve selection keys once; touching one segment never rebuilds the
@@ -242,15 +242,26 @@ internal sealed unsafe class GpuTrailRenderer : IDisposable
             frame.Tint = new(line.Color.R / 255f, line.Color.G / 255f, line.Color.B / 255f, line.Color.A / 255f);
             frame.Origin.W = Math.Clamp(line.Alpha, 0, 1);
             frame.View.W = VisualAttributeMath.AnimationOffset(Stopwatch.GetElapsedTime(animationStart).TotalSeconds, line.AnimSpeed);
-            frame.Style = new(Math.Max(.001f, Math.Abs(line.Scale)) * 2 / line.GameWidth, line.Height, line.FadeNear, line.FadeFar);
-            float mapWidth = MapRibbonProjection.Width(line.MapSize, camera.Compass?.UiSize ?? 1) * (fullMap ? line.MapWidth : line.MinimapWidth);
+            frame.Style = new(1 / ScaleNormalization.WorldRepeatMeters, line.Height, line.FadeNear, line.FadeFar);
+            bool solid = mapStyle == MapTrailVisualStyle.BlishHud;
+            float mapUser = fullMap ? line.MapWidth : line.MinimapWidth;
+            float mapWidth = solid ? ScaleNormalization.SolidWidth(camera.Compass?.UiSize ?? 1, mapUser)
+                : ScaleNormalization.MapTrailWidth(line.MapSize, camera.Compass?.Scale ?? 0, line.ScaleOnMapWithZoom, camera.Compass?.UiSize ?? 1, mapUser, line.Scale);
+            worldVisible &= line.Scale > 0;
+            mapVisible &= texture.Available;
+            var worldTint = frame.Tint;
+            uint xmlColor = (uint)(line.Color.A << 24 | line.Color.R << 16 | line.Color.G << 8 | line.Color.B);
+            uint solidColor = ScaleNormalization.SolidColor(xmlColor, texture.SampledColor);
+            var mapTint = new Vector4((solidColor >> 16 & 255) / 255f, (solidColor >> 8 & 255) / 255f, (solidColor & 255) / 255f, (solidColor >> 24) / 255f);
             frame.MapOrigin = new(mapBasis.Origin.X, mapBasis.Origin.Y, mapBasis.WorldOrigin.X, mapBasis.WorldOrigin.Y);
             frame.MapX = new(mapBasis.X, 0, 0);
             frame.MapZ = new(mapBasis.Z, 0, 0);
             for (int pass = 0; pass < 2; pass++)
             {
                 if (pass == 0 ? !worldVisible : !mapVisible) continue;
-                frame.MapStyle = new(mapWidth, MapRibbonProjection.UvScale(mapBasis, mapWidth, line.Scale), pass, line.GameWidth);
+
+                frame.Tint = pass == 1 && solid ? mapTint : worldTint;
+                frame.MapStyle = new(mapWidth, MapRibbonProjection.UvScale(mapBasis, mapWidth, line.Scale), pass == 1 && solid ? 2 : pass, Math.Max(0, line.Scale) * line.GameWidth);
                 D3D.Update(context, constants, &frame);
                 foreach (var segment in line.Trail.Segments)
                 {
@@ -277,7 +288,7 @@ internal sealed unsafe class GpuTrailRenderer : IDisposable
         {
             // Normally show after the first frame. If a hidden swap chain is
             // reported occluded, expose its HWND so the next present can resume.
-            shown = NativeGameWindow.PlaceOverlay(window, above, placement.Left, placement.Top, (int)width, (int)height, true);
+            shown = NativeGameWindow.PlaceOverlay(window, above, placement.Left, placement.Top, (int)width, (int)height, true, gameSurface: true);
         }
         dirty = !presented;
         checkTextures = false;
@@ -293,7 +304,7 @@ internal sealed unsafe class GpuTrailRenderer : IDisposable
     {
         bool append = mesh.Count >= 2 && segment.Points.Count > mesh.Count && ReferenceEquals(mesh.Source, segment.Points)
             && preview == null && mesh.Preview == null && segment.GeometryRevision - mesh.Revision == segment.Points.Count - mesh.Count;
-        var vertices = GpuTrailGeometry.Build(trail, segment, preview, append ? mesh.Count : 1, append ? mesh.Length : 0);
+        var vertices = GpuTrailGeometry.Build(trail, segment, preview, append ? mesh.Count : 1, append ? mesh.Length : 0, append ? mesh.MapLength : 0);
         int required = checked((append ? mesh.VertexCount : 0) + vertices.Length);
         if (required > mesh.Capacity)
         {
@@ -339,6 +350,7 @@ internal sealed unsafe class GpuTrailRenderer : IDisposable
         mesh.Revision = segment.GeometryRevision;
         mesh.Source = segment.Points;
         mesh.Preview = preview;
+        mesh.MapLength = vertices.Length > 0 ? -vertices[^1].MapDistance : append ? mesh.MapLength : 0;
         mesh.Length = vertices.Length > 0 ? -vertices[^1].Uv.Y : append ? mesh.Length : 0;
     }
 
@@ -393,6 +405,7 @@ internal sealed unsafe class GpuTrailRenderer : IDisposable
             Debug.WriteLine(ex.Message);
         }
         if (cached != null && cached.Stamp == stamp) return cached;
+        bool available = relative.Length == 0 || (path != null && File.Exists(path));
         BitmapSource image;
         try
         {
@@ -412,6 +425,7 @@ internal sealed unsafe class GpuTrailRenderer : IDisposable
         {
             Log($"Texture '{relative}' could not be decoded; using preview texture. {ex.Message}");
             image = DefaultTexture();
+            available = false;
         }
         var converted = new FormatConvertedBitmap(image, PixelFormats.Bgra32, null, 0);
         int stride = checked(converted.PixelWidth * 4);
@@ -422,7 +436,7 @@ internal sealed unsafe class GpuTrailRenderer : IDisposable
         {
             fixed (byte* bytes = pixels) resource = D3D.Texture(device, (uint)converted.PixelWidth, (uint)converted.PixelHeight, bytes);
             view = D3D.ResourceView(device, resource, false);
-            var texture = new TextureAsset { Resource = resource, View = view, Stamp = stamp };
+            var texture = new TextureAsset { Resource = resource, View = view, Stamp = stamp, Available = available, SampledColor = ScaleNormalization.AverageColor(pixels) };
             resource = view = 0;
             cached?.Dispose();
             textures[key] = texture;
@@ -452,7 +466,7 @@ internal sealed unsafe class GpuTrailRenderer : IDisposable
         public nint Vertices, Indices;
         public int Capacity, VertexCount, Count;
         public long Revision = -1;
-        public float Length;
+        public float Length, MapLength;
         public List<TrailPoint>? Source;
         public IReadOnlyDictionary<string, Vector3>? Preview;
         public void Dispose()
@@ -466,6 +480,8 @@ internal sealed unsafe class GpuTrailRenderer : IDisposable
     {
         public nint Resource, View;
         public DateTime Stamp;
+        public bool Available;
+        public uint SampledColor;
         public void Dispose()
         {
             D3D.Release(ref View);
@@ -512,7 +528,7 @@ internal sealed unsafe class GpuTrailRenderer : IDisposable
         };
         Texture2D trailTexture : register(t0);
         SamplerState repeatTexture : register(s0);
-        struct VertexIn { float3 position : POSITION; float2 uv : TEXCOORD0; float3 center : TEXCOORD1; };
+        struct VertexIn { float3 position : POSITION; float2 uv : TEXCOORD0; float3 center : TEXCOORD1; float mapDistance : TEXCOORD2; };
         struct VertexOut { float4 position : SV_POSITION; float2 uv : TEXCOORD0; float3 world : TEXCOORD1; };
         VertexOut VS(VertexIn input) {
             VertexOut output;
@@ -523,7 +539,7 @@ internal sealed unsafe class GpuTrailRenderer : IDisposable
                 side = lengthSquared > 1e-12 ? side * rsqrt(lengthSquared) : float2(1, 0);
                 float2 screen = center + side * mapStyle.x * 0.5;
                 output.position = float4(screen.x * 2 / view.x - 1, 1 - screen.y * 2 / view.y, 0, 1);
-                output.uv = float2(input.uv.x, input.uv.y * mapStyle.y);
+                output.uv = float2(input.uv.x, input.mapDistance * mapStyle.y);
                 output.world = input.center;
                 return output;
             }
@@ -548,7 +564,7 @@ internal sealed unsafe class GpuTrailRenderer : IDisposable
                 alpha *= style.w == style.z ? (distanceInches <= style.z ? 1 : 0) :
                     saturate((style.w - distanceInches) / (style.w - style.z));
             }
-            float4 color = trailTexture.Sample(repeatTexture, input.uv + float2(0, view.w)) * tint;
+            float4 color = mapStyle.z > 1.5 ? tint : trailTexture.Sample(repeatTexture, input.uv + float2(0, view.w)) * tint;
             color.a *= alpha;
             color.rgb *= color.a;
             return color;

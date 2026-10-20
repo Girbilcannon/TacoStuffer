@@ -1,6 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Markdig" Version="0.42.0" />
+    <Compile Include="../TacoStuffer/Models/MarkdownPreview.cs" Link="MarkdownPreview.cs" />
+    <Compile Include="../TacoStuffer/Models/ProjectDocuments.cs" Link="ProjectDocuments.cs" />
+    <Compile Include="../TacoStuffer/Models/ScaleNormalization.cs" Link="ScaleNormalization.cs" />
+    <Compile Include="../TacoStuffer/Models/MarkerInteractions.cs" Link="MarkerInteractions.cs" />
     <Compile Include="../TacoStuffer/Services/MumbleLinkReader.cs" Link="MumbleLinkReader.cs" />
     <Compile Include="../TacoStuffer/Models/TrailPicking.cs" Link="TrailPicking.cs" />
     <Compile Include="../TacoStuffer/Models/AttributeDefinition.cs" Link="AttributeDefinition.cs" />

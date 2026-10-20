@@ -13,6 +13,7 @@ namespace TacoStuffer.Views;
 
 public abstract class PreviewDialog : Window
 {
+    protected DockPanel CaptionBar { get; private set; } = null!;
     protected readonly StackPanel Body = new() { Margin = new Thickness(24) };
     protected PreviewDialog(string title, double width = 500)
     {
@@ -29,7 +30,7 @@ public abstract class PreviewDialog : Window
         FontSize = 13;
         var frame = new Border { BorderBrush = (Brush)Application.Current.FindResource("LineBrush"), BorderThickness = new Thickness(1) };
         var dock = new DockPanel();
-        var caption = new DockPanel { Background = (Brush)Application.Current.FindResource("PanelBrush"), LastChildFill = true };
+        var caption = CaptionBar = new DockPanel { Background = (Brush)Application.Current.FindResource("PanelBrush"), LastChildFill = true };
         var close = new Button { Content = "×", Padding = new Thickness(12, 5, 12, 5), Margin = new Thickness(5) };
         close.Click += (_, _) => Close();
         DockPanel.SetDock(close, Dock.Right);
@@ -139,6 +140,31 @@ public sealed class PreferencesWindow : PreviewDialog
             trailModes[mode] = choice;
             visuals.Children.Add(choice);
         }
+        var showInfo = new CheckBox { Content = "Show marker information", IsChecked = Preferences.ShowMarkerInformation, Margin = new Thickness(0, 14, 0, 8) };
+        void PreviewInfoSetting()
+        {
+            if (updatingVisuals) return;
+            Preferences.ShowMarkerInformation = showInfo.IsChecked == true;
+            VisualPreviewChanged?.Invoke(Preferences);
+        }
+        showInfo.Checked += (_, _) => PreviewInfoSetting();
+        showInfo.Unchecked += (_, _) => PreviewInfoSetting();
+        visuals.Children.Add(showInfo);
+        visuals.Children.Add(new TextBlock { Text = "Marker clipboard", Margin = new Thickness(0, 8, 0, 6) });
+        var clipboardChoices = new Dictionary<MarkerClipboardMode, RadioButton>();
+        foreach (var mode in Enum.GetValues<MarkerClipboardMode>())
+        {
+            var choice = new RadioButton { Content = mode switch { MarkerClipboardMode.Always => "Always", MarkerClipboardMode.OnlyWhenInteractedWith => "Only when interacted with", _ => "Never" }, GroupName = "MarkerClipboard", IsChecked = Preferences.MarkerClipboard == mode, Margin = new Thickness(16, 0, 0, 8) };
+            choice.Checked += (_, _) =>
+            {
+                if (updatingVisuals) return;
+                Preferences.MarkerClipboard = mode;
+                VisualPreviewChanged?.Invoke(Preferences);
+            };
+            clipboardChoices[mode] = choice;
+            visuals.Children.Add(choice);
+        }
+        visuals.Children.Add(new TextBlock { Text = "Automatic copy tests also require Test marker interactions in the overlay. These preview settings are not exported to XML.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 12) });
         visuals.Children.Add(new TextBlock { Text = "Preview multipliers only; exported XML sizes stay unchanged.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10) });
         var visualSliders = new List<Slider>();
         void AddMultiplier(string label, float initial, System.Action<float> set)
@@ -149,7 +175,7 @@ public sealed class PreferencesWindow : PreviewDialog
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) });
             row.Children.Add(new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center });
             var readout = new TextBlock { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right };
-            var slider = new Slider { Minimum = .25, Maximum = 4, TickFrequency = .05, SmallChange = .05, LargeChange = .25, IsSnapToTickEnabled = true, Value = EditorPreferences.ValidMultiplier(initial), VerticalAlignment = VerticalAlignment.Center };
+            var slider = new Slider { Minimum = .25, Maximum = 3, TickFrequency = .05, SmallChange = .05, LargeChange = .25, IsSnapToTickEnabled = true, Value = EditorPreferences.ValidMultiplier(initial), VerticalAlignment = VerticalAlignment.Center };
             slider.ValueChanged += (_, _) =>
             {
                 set((float)slider.Value);
@@ -169,6 +195,13 @@ public sealed class PreferencesWindow : PreviewDialog
         AddMultiplier("Trail Game Width", Preferences.TrailGameWidth, value => Preferences.TrailGameWidth = value);
         AddMultiplier("Trail Map Width", Preferences.TrailMapWidth, value => Preferences.TrailMapWidth = value);
         AddMultiplier("Trail Mini Map Width", Preferences.TrailMinimapWidth, value => Preferences.TrailMinimapWidth = value);
+        visuals.Children.Add(new TextBlock { Text = "Map and minimap trail style", Margin = new Thickness(0, 12, 0, 6) });
+        var tacoStyle = new RadioButton { Content = "Taco (textured)", GroupName = "MapTrailStyle", IsChecked = Preferences.MapTrailStyle == MapTrailVisualStyle.Taco, Margin = new Thickness(0, 3, 0, 3) };
+        var blishStyle = new RadioButton { Content = "Blish HUD (solid)", GroupName = "MapTrailStyle", IsChecked = Preferences.MapTrailStyle == MapTrailVisualStyle.BlishHud, Margin = new Thickness(0, 3, 0, 8) };
+        tacoStyle.Checked += (_, _) => { Preferences.MapTrailStyle = MapTrailVisualStyle.Taco; if (!updatingVisuals) VisualPreviewChanged?.Invoke(Preferences); };
+        blishStyle.Checked += (_, _) => { Preferences.MapTrailStyle = MapTrailVisualStyle.BlishHud; if (!updatingVisuals) VisualPreviewChanged?.Invoke(Preferences); };
+        visuals.Children.Add(tacoStyle);
+        visuals.Children.Add(blishStyle);
         sections.Items.Add(new TabItem { Header = "Visual Settings", Content = new ScrollViewer { Content = visuals, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } });
         var gameSettings = new StackPanel { Margin = new Thickness(12) };
         gameSettings.Children.Add(new TextBlock { Text = "Guild Wars 2 executable path", Margin = new Thickness(0, 0, 0, 8) });
@@ -273,10 +306,13 @@ public sealed class PreferencesWindow : PreviewDialog
             updatingVisuals = true;
             try
             {
+                tacoStyle.IsChecked = true;
                 markerNames.IsChecked = Preferences.ShowMarkerNames;
                 selectedNames.IsChecked = Preferences.OnlyShowForSelected;
                 nameDistance.Value = Preferences.MarkerNameDistanceThreshold;
                 trailModes[Preferences.TrailOverlaySelection].IsChecked = true;
+                showInfo.IsChecked = Preferences.ShowMarkerInformation;
+                clipboardChoices[Preferences.MarkerClipboard].IsChecked = true;
             }
             finally { updatingVisuals = false; }
             PreviewNames();

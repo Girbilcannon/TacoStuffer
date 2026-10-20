@@ -352,7 +352,7 @@ Check((string?)recordedSecond.Poi.Attribute("DisplayName") == "Marker 00002" && 
 Check(recordedFirst.Poi.Attribute("GUID")!.Value != recordedSecond.Poi.Attribute("GUID")!.Value, "Markers have distinct GUIDs");
 recordB.Root!.Element("POIs")!.Add(new XElement("POI", new XAttribute("DisplayName", "Marker 00042")));
 Check(MarkerRecording.NextNumber(recordDocs, 3) == 43 && MarkerRecording.NextNumber(recordDocs, 87) == 87, "Existing manually typed names advance numbering while saved counter never decreases");
-string beforeRejected = recordA.ToString();
+string beforeRejectedMarker = recordA.ToString();
 try
 {
     MarkerRecording.Create(recordA, recordDocs, "pack.b", 15, new(1, 2, 3), 1);
@@ -361,7 +361,7 @@ try
 catch (InvalidOperationException)
 {
 }
-Check(recordA.ToString() == beforeRejected, "Wrong target rejected without mutation");
+Check(recordA.ToString() == beforeRejectedMarker, "Wrong target rejected without mutation");
 var previousCulture = System.Globalization.CultureInfo.CurrentCulture;
 try
 {
@@ -578,7 +578,7 @@ gpuSegment.Add(new(1, 2, 24));
 gpuSegment.Points[1].Id = 15;
 gpuSegment.NextPoint = 16;
 var gpuVertices = GpuTrailGeometry.Build(gpuRoute, gpuSegment);
-Check(System.Runtime.InteropServices.Marshal.SizeOf<TrailGpuVertex>() == 32, "GPU input stride matches position, UV and map-ribbon center");
+Check(System.Runtime.InteropServices.Marshal.SizeOf<TrailGpuVertex>() == 36, "GPU input stride includes independent world and projected-map distances");
 Check(System.Runtime.InteropServices.Marshal.OffsetOf<TrailGpuVertex>(nameof(TrailGpuVertex.Uv)).ToInt32() == 12 && System.Runtime.InteropServices.Marshal.OffsetOf<TrailGpuVertex>(nameof(TrailGpuVertex.Center)).ToInt32() == 20, "GPU input offsets agree with the native layout");
 Check(gpuVertices.Length == 4 && Math.Abs(gpuVertices[2].Uv.Y + 21) < .0001f, "A 1-to-15 point gap produces a full-length ribbon with distance-based UV repetition");
 Check(Math.Abs(System.Numerics.Vector3.Distance(gpuVertices[0].Position, gpuVertices[1].Position) - 1.016f) < .0001f, "GPU ribbon width matches TacO's meter conversion");
@@ -610,7 +610,7 @@ Check(!historyTest.CanRedo, "A new edit replaces the redo branch");
 historyTest.Commit("edited again", "Edit points");
 Check(historyTest.UndoEntries.Count == 2, "History honors its action limit");
 var keybindTest = new EditorPreferences();
-Check(EditorPreferences.Actions.Count == 9 && keybindTest.Keybinds.Count == 0, "All nine recording shortcuts start unassigned");
+Check(EditorPreferences.Actions.Count == 10 && keybindTest.Keybinds.Count == 0, "All ten recording/interaction shortcuts start unassigned");
 var keybindChord = new KeyChord(75, 7, "K");
 keybindTest.Keybinds["marker"] = keybindChord;
 Check(keybindChord.Display == "Ctrl + Shift + Alt + K" && keybindTest.Conflict("trail", keybindChord) != null, "Modifiers are retained and duplicate bindings rejected");
@@ -642,7 +642,7 @@ Check(VisualAttributeMath.StickyInRange(System.Numerics.Vector3.Zero, new(0, 0, 
 var stickyPreviewRect = VisualAttributeMath.StickyRect(1920, 1080, 200, 100, 100, 50, 1);
 Check(stickyPreviewRect == new PreviewRect(960, 440, 200, 100), "Sticky uses center-origin pixel offsets, positive Y upward and source pixel size");
 var fittedSticky = VisualAttributeMath.StickyRect(800, 600, 1600, 800, 900, 900, 1);
-Check(fittedSticky.Width == 800 && fittedSticky.Height == 400 && fittedSticky.X == 0 && fittedSticky.Y == 0, "Oversize Sticky previews fit proportionally and clamp inside the client");
+Check(fittedSticky.Width == 776 && fittedSticky.Height == 388 && fittedSticky.X == 12 && fittedSticky.Y == 12, "Oversize Sticky previews fit proportionally and clamp inside the client");
 Check(gpuVertices[0].Center == gpuSegment.Points[0].Position && gpuVertices[2].Center == new System.Numerics.Vector3(1, 2, 24), "Ribbon vertices retain centerline positions for constant-width textured maps");
 Check(MapRibbonProjection.TryBasis(mapFrame, 1920, 1080, out var mapRibbonTestBasis), "Map ribbon projection builds from compass telemetry");
 var mapRibbonTestPosition = mapFrame.AvatarPosition + new System.Numerics.Vector3(12, 3, 45);
@@ -650,7 +650,25 @@ Check(MapProjection.TryProject(mapFrame, mapRibbonTestPosition, mapRect, 1920, 1
 var mapRibbonSideA = mapRibbonTestBasis.ProjectSide(new(1, 2, 2.5f), new(1, 2, 3), 3);
 var mapRibbonSideB = mapRibbonTestBasis.ProjectSide(new(1, 2, 3.5f), new(1, 2, 3), 3);
 Check(Math.Abs(System.Numerics.Vector2.Distance(mapRibbonSideA, mapRibbonSideB) - 6) < .001f, "Map ribbon width stays six pixels independent of map zoom");
-Check(MapRibbonProjection.UvScale(mapRibbonTestBasis, 6, 2) > MapRibbonProjection.UvScale(mapRibbonTestBasis, 6, 1), "TrailScale controls repeating map texture density");
+Check(MapRibbonProjection.UvScale(mapRibbonTestBasis, 6, 2) == MapRibbonProjection.UvScale(mapRibbonTestBasis, 6, 1), "Map UV conversion uses the resolved width exactly once");
+// Handoff fixtures use production formulas, independent of image dimensions.
+Check(ScaleNormalization.WorldHalf(900, 30, 1, 1, 5, 2048) == 30 && ScaleNormalization.WorldHalf(900, 30, 1, 2, 5, 2048) == 60, "World icon projection returns half extents without an extra half factor");
+Check(ScaleNormalization.WorldHalf(900, 0, 1, 1, 5, 2048) == 0 && ScaleNormalization.WorldHalf(900, float.NaN, 1, 1, 5, 2048) == 0, "Invalid marker depth never produces geometry");
+Check(ScaleNormalization.WorldHalf(900, 30, 1, 3, 5, 40) == 40 && ScaleNormalization.WorldHalf(900, 30, 0, 1, 5, 40) == 5, "Icon user scale is applied before physical-pixel clamps");
+Check(ScaleNormalization.WorldWidth(1, 1) == 1.016f && ScaleNormalization.WorldWidth(2, 1) == 2.032f && ScaleNormalization.WorldWidth(-1, 1) == 0 && ScaleNormalization.WorldRepeatMeters == 1.016f, "World ribbon width and fixed repeat have distinct contracts");
+Check(ScaleNormalization.MapIconHalf(20, 1, true, 1, 1) == 10 && ScaleNormalization.MapIconHalf(20, 2, true, 1, 1) == 5 && ScaleNormalization.MapIconHalf(20, 2, false, 1, 1) == 10, "Both map icon contexts use compass zoom only when enabled");
+Check(ScaleNormalization.MapTrailWidth(20, 1, true, 1, 1, 1) == 20 && ScaleNormalization.MapTrailWidth(20, 2, true, 1, 1, 1) == 10 && ScaleNormalization.MapTrailWidth(20, 2, false, 1, 1, 1) == 20, "Textured map width and repeat match the supplied baseline");
+Check(ScaleNormalization.MapTrailWidth(1000, 1, true, 1, 3, 4) == 100 && ScaleNormalization.MapTrailWidth(20, 1, true, 1, 1, 0) == 1 && ScaleNormalization.MapIconHalf(20, 0, true, 1, 1) == 0, "Map sizing clamps final geometry and rejects invalid compass scale");
+Check(ScaleNormalization.SolidWidth(1, 1) == 4 && ScaleNormalization.SolidWidth(1, 2) == 8, "Solid map width excludes zoom and XML trail dimensions");
+Check(ScaleNormalization.AverageColor(new byte[] { 0, 0, 255, 255, 255, 0, 0, 0 }) == 0xffff0000 && ScaleNormalization.AverageColor(new byte[] { 255, 255, 255, 0 }) == 0, "Texture sampling ignores transparent RGB and preserves fully transparent artwork");
+Check(ScaleNormalization.AverageColor(new byte[] { 0, 0, 1, 1, 0, 0, 0, 1 }) == 0xff010000, "Sample color rounds midpoint channels upward");
+Check(ScaleNormalization.SolidColor(0xffffffff, 0xff123456) == 0xff123456 && ScaleNormalization.SolidColor(0x80112233, 0xffabcdef) == 0x80112233, "Non-default XML color replaces rather than multiplies sampled color");
+Check(System.Runtime.InteropServices.Marshal.OffsetOf<TrailGpuVertex>(nameof(TrailGpuVertex.MapDistance)).ToInt32() == 32, "Projected-map distance matches the shader input offset");
+var slopeSegment = new TrailSegment { Id = 900, Points = [new() { Id = 1, Position = new(0, 0, 0) }, new() { Id = 2, Position = new(3, 12, 4) }] };
+var slopeMesh = GpuTrailGeometry.Build(gpuRoute, slopeSegment);
+Check(Math.Abs(slopeMesh[^1].Uv.Y + 13) < .001f && Math.Abs(slopeMesh[^1].MapDistance + 5) < .001f, "Sloped trails retain 3D world distance and planar map distance separately");
+var slopeAppend = GpuTrailGeometry.Build(gpuRoute, slopeSegment, firstEdge: 1, initialLength: 13, initialMapLength: 5);
+Check(slopeAppend[0].Uv.Y == -13 && slopeAppend[0].MapDistance == -5, "Appending geometry preserves both distance prefixes");
 var visualPrefs = new EditorPreferences();
 Check(visualPrefs.ShowMarkerNames && visualPrefs.OnlyShowForSelected && visualPrefs.TrailOverlaySelection == TrailSelectionMode.Trail, "Fresh preferences show selected marker names and select complete trails");
 Check(visualPrefs.MarkerGameScale == 1 && visualPrefs.MarkerMapScale == 1 && visualPrefs.MarkerMinimapScale == 1 && visualPrefs.TrailGameWidth == 1 && visualPrefs.TrailMapWidth == 1 && visualPrefs.TrailMinimapWidth == 1, "All six preview multipliers default to one");
@@ -672,11 +690,20 @@ Check(!visualPrefs.ShowMarkerNames && !visualPrefs.OnlyShowForSelected && visual
 var visualPrefsFile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), Guid.NewGuid() + ".json");
 try
 {
+    visualPrefs.MapTrailStyle = MapTrailVisualStyle.BlishHud;
     visualPrefs.Save(visualPrefsFile);
     var roundtripVisuals = EditorPreferences.Load(visualPrefsFile);
+    Check(roundtripVisuals.MapTrailStyle == MapTrailVisualStyle.BlishHud && roundtripVisuals.ScaleBaselineV1 == 1, "Trail style persists with the current scale baseline");
     Check(!roundtripVisuals.ShowMarkerNames && !roundtripVisuals.OnlyShowForSelected && roundtripVisuals.MarkerNameDistanceThreshold == 125 && roundtripVisuals.TrailOverlaySelection == TrailSelectionMode.NearestPoint, "Marker name settings and trail selection mode persist independently");
     Check(roundtripVisuals.GameExecutablePath == visualPrefs.GameExecutablePath, "Game executable path persists across launches, including spaces");
     Check(roundtripVisuals.MarkerMapScale == 2 && roundtripVisuals.TrailMinimapWidth == 3 && roundtripVisuals.MarkerMinimapScale == 1, "Independent visual multipliers persist across launches");
+    System.IO.File.WriteAllText(visualPrefsFile, "{\"MarkerGameScale\":2,\"TrailMapWidth\":3,\"ShowMarkerInformation\":false,\"OnlyShowForSelected\":false,\"Keybinds\":{\"interact\":{\"VirtualKey\":75,\"Modifiers\":4,\"KeyName\":\"K\"}}}");
+    var baselineMigration = EditorPreferences.Load(visualPrefsFile);
+    Check(baselineMigration.MarkerGameScale == 1 && baselineMigration.TrailMapWidth == 1 && !baselineMigration.ShowMarkerInformation && !baselineMigration.OnlyShowForSelected && baselineMigration.Keybinds.ContainsKey("interact"), "One-time scale reset preserves interaction settings and keybinds");
+    baselineMigration.MarkerGameScale = 2;
+    baselineMigration.Save(visualPrefsFile);
+    Check(EditorPreferences.Load(visualPrefsFile).MarkerGameScale == 2, "Later scale adjustments survive subsequent launches");
+    Check(System.IO.File.ReadAllText(visualPrefsFile).Contains("ScaleBaselineV1"), "Migration writes its completion marker");
     System.IO.File.WriteAllText(visualPrefsFile, "{\"showSelectedMarkerNames\":true}");
     var migratedVisuals = EditorPreferences.Load(visualPrefsFile);
     Check(migratedVisuals.GameExecutablePath == "", "Older preferences migrate without a configured game executable");
@@ -692,8 +719,8 @@ finally
 {
     System.IO.File.Delete(visualPrefsFile);
 }
-Check(EditorPreferences.ValidMultiplier(float.NaN) == 1 && EditorPreferences.ValidMultiplier(0) == .25f && EditorPreferences.ValidMultiplier(10) == 4, "Malformed or out-of-range multipliers cannot collapse preview geometry");
-Check(MapRibbonProjection.Width(20, 1) == 12, "Base map/minimap trail width is three times the 0.0.35 width independently of preferences");
+Check(EditorPreferences.ValidMultiplier(float.NaN) == 1 && EditorPreferences.ValidMultiplier(0) == .25f && EditorPreferences.ValidMultiplier(10) == 3, "Malformed or out-of-range multipliers cannot collapse preview geometry");
+Check(MapRibbonProjection.Width(20, 1) == 20, "Neutral map/minimap textured trail width is twenty physical pixels");
 var importRoot = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "TacoImportChecks_" + Guid.NewGuid().ToString("N"));
 System.IO.Directory.CreateDirectory(importRoot);
 try
@@ -907,7 +934,7 @@ finally
 }
 var embeddedCatalog = new AttributeCatalog();
 embeddedCatalog.Reload(null);
-int embeddedDefinitionCount = 15;
+int embeddedDefinitionCount = 17;
 Check(embeddedCatalog.Errors.Count == 0 && embeddedCatalog.Groups.Count == embeddedDefinitionCount - 2, "All compiled built-ins load without files or manifest resources");
 Check(embeddedCatalog.Groups.Single(g => g.Key == "iconFile").Members.Any(m => m.Name == "iconSize")
     && embeddedCatalog.Groups.Single(g => g.Key == "texture").Members.Any(m => m.Name == "trailScale"), "Compiled definitions preserve Icon and Texture attribute bundles");
@@ -952,4 +979,167 @@ Check(TrailPicking.TryDepth(trailPickNear with { DepthA = 2, DepthB = 4, DepthC 
     && Math.Abs(trailPickDepth - 1 / (.5f / 2 + .25f / 4 + .25f / 8)) < .0001f, "Ribbon overlap uses perspective-correct interpolated depth");
 Check(TrailPicking.NearestPoint([(100L, new(1, 0)), (7L, new(9, 0)), (42L, new(20, 0))], new(8.5f, 0)) == 7
     && TrailPicking.NearestPoint([], new(8.5f, 0)) == null, "Nearest-point selection uses screen distance and stable IDs rather than list indices");
-Console.WriteLine("Core editing, export, GPU geometry, trail picking, history, preferences and search checks passed.");
+var interactionCategories = new Dictionary<string, XElement>
+{
+    ["route.handoff"] = XElement.Parse("<MarkerCategory name='handoff' INFO='First line&#xA;Second line' inforange='100' triggerRange='6' autoTrigger=' TRUE '/>")
+};
+var interactionPoi = XElement.Parse("<POI type='route.handoff' MapID='24' xpos='10' ypos='2' zpos='30' copy='[&amp;BMwDAAA=]' copy-message='Next {0}'/>");
+var interactionSpec = MarkerInteraction.Read("test|POI:1", interactionPoi, interactionCategories)!;
+Check(interactionSpec.Info == "First line\nSecond line" && interactionSpec.InfoRadius == 100 && interactionSpec.CopyRadius == 6 && interactionSpec.AutoTrigger,
+    "Interaction parsing inherits mixed-case attributes, exact newlines, independent meter ranges and whitespace-tolerant booleans");
+Check(interactionSpec.Copy == "[&BMwDAAA=]" && MarkerInteraction.Confirmation(interactionSpec.Message, interactionSpec.Copy) == "Next [&BMwDAAA=]",
+    "XML entities decode exactly once before clipboard formatting");
+Check(MarkerInteraction.Confirmation("{{{0}}} {9}", "x{0}") == "{x{0}} {9}", "Confirmation expands escaped braces and inserts a payload once without recursively formatting it");
+interactionPoi.SetAttributeValue("info", "");
+interactionPoi.SetAttributeValue("copy", "");
+Check(MarkerInteraction.Read("empty", interactionPoi, interactionCategories) == null, "Empty POI strings clear inherited interaction text");
+interactionPoi.SetAttributeValue("copy", "payload");
+interactionCategories["route.handoff"].SetAttributeValue("inforange", "NaN");
+Check(MarkerInteraction.Read("fallback", interactionPoi, interactionCategories)!.InfoRadius == 6, "Invalid infoRange falls back to effective triggerRange");
+interactionCategories["route.handoff"].SetAttributeValue("triggerRange", "Infinity");
+Check(MarkerInteraction.Read("fallback2", interactionPoi, interactionCategories)!.InfoRadius == 2, "Missing/invalid radii fall back to two meters");
+Check(MarkerInteraction.TryRadius("-4", out float zeroRange) && zeroRange == 0 && !MarkerInteraction.TryRadius("6m", out _) && !MarkerInteraction.TryRadius("NaN", out _), "Range parsing clamps negative radii and rejects partial and nonfinite numbers");
+Check(MarkerInteraction.Read("trail", new XElement("Trail"), interactionCategories) == null, "Trails do not acquire marker Info/Copy behavior");
+var interactionState = new MarkerInteractionSession();
+var independent = interactionSpec with { Position = System.Numerics.Vector3.Zero };
+var betweenRanges = interactionState.Update([independent], 24, new(0, 0, 50), 0, true);
+Check(betweenRanges.Info == independent && betweenRanges.Copy == null && betweenRanges.Automatic == null, "Info remains visible between the independent 6m Copy and 100m Info radii");
+interactionState.Dismiss(independent.Key);
+Check(interactionState.Update([independent], 24, new(0, 0, 50), 100, false).Info == null, "Info X dismissal persists while in range, including map/focus suppression");
+interactionState.Update([independent], 24, new(0, 0, 101), 200, false);
+Check(interactionState.Update([independent], 24, new(0, 0, 50), 300, false).Info == independent, "Leaving and re-entering re-arms dismissed Info");
+Check(interactionState.Update([independent], 24, new(0, 0, 5), 400, true).Automatic == independent, "Auto Copy triggers on an actual range entry");
+interactionState.AutomaticAttempted(400);
+Check(interactionState.Update([independent], 24, new(0, 0, 5), 3000, true).Automatic == null, "Remaining in range never rewrites the clipboard each frame");
+interactionState.Update([independent], 24, new(0, 0, 8), 3100, false);
+Check(interactionState.Update([independent], 24, new(0, 0, 5), 3200, false).Automatic == null
+    && interactionState.Update([independent], 24, new(0, 0, 5), 3300, true).Automatic == null, "Enabling interaction tests while already in range does not create a fake entry");
+interactionState.Reset();
+Check(interactionState.Update([independent], 24, new(0, 0, 1), 4000, true).Automatic == null, "Import, model edits and reset baseline never execute Copy");
+var closerInfo = independent with { Key = "near-info", Position = new(0, 0, 20), Copy = "", InfoRadius = 100 };
+var closerCopy = independent with { Key = "near-copy", Position = new(0, 0, 1), Info = "", AutoTrigger = false };
+interactionState.Reset();
+var separateNearest = interactionState.Update([closerInfo, closerCopy], 24, System.Numerics.Vector3.Zero, 5000, false);
+Check(separateNearest.Info == closerInfo && separateNearest.Copy == closerCopy, "Nearest Info and nearest Copy are resolved independently");
+Check(interactionState.Update([], 24, System.Numerics.Vector3.Zero, 5100, false).Info == null, "Deleting a marker clears its HUD reference safely");
+interactionState.Reset();
+interactionState.Update([independent], 24, new(0, 0, 10), 6000, true);
+Check(interactionState.Update([independent], 24, new(0, 0, 1), 6100, true).Automatic == independent, "A fresh range entry schedules one automatic attempt");
+interactionState.AutomaticAttempted(6100);
+interactionState.Update([independent], 24, new(0, 0, 10), 6200, true);
+Check(interactionState.Update([independent], 24, new(0, 0, 1), 6300, true).Automatic == null, "Two-second automatic-copy cooldown suppresses boundary chatter");
+interactionState.Update([independent], 24, new(0, 0, 10), 8500, true);
+var nearerAutomatic = independent with { Key = "nearer-auto", Position = new(0, 0, 2) };
+Check(interactionState.Update([independent, nearerAutomatic], 24, new(0, 0, 2), 8600, true).Automatic == nearerAutomatic, "Simultaneous entries choose the nearest automatic-copy marker");
+Check(interactionState.Update([independent], 25, new(0, 0, 1), 9000, true).Copy == null, "Changing maps removes old proximity targets");
+var interactionPrefs = new EditorPreferences();
+Check(interactionPrefs.ShowMarkerInformation && interactionPrefs.MarkerClipboard == MarkerClipboardMode.Always, "Info is on and clipboard permission defaults to Always; automatic writes still require explicit runtime test mode");
+interactionPrefs.ShowMarkerInformation = false;
+interactionPrefs.MarkerClipboard = MarkerClipboardMode.Never;
+var interactionPrefsCopy = interactionPrefs.Copy();
+interactionPrefsCopy.ResetDefaults();
+Check(!interactionPrefs.ShowMarkerInformation && interactionPrefs.MarkerClipboard == MarkerClipboardMode.Never
+    && interactionPrefsCopy.ShowMarkerInformation && interactionPrefsCopy.MarkerClipboard == MarkerClipboardMode.Always, "Info/clipboard preferences copy and reset without mutating saved settings");
+string interactionPrefsPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "TacoStufferInteractions_" + Guid.NewGuid().ToString("N") + ".json");
+try
+{
+    interactionPrefs.Save(interactionPrefsPath);
+    var reloadedInteractions = EditorPreferences.Load(interactionPrefsPath);
+    Check(!reloadedInteractions.ShowMarkerInformation && reloadedInteractions.MarkerClipboard == MarkerClipboardMode.Never, "Info visibility and clipboard policy persist independently of pack XML");
+}
+finally { System.IO.File.Delete(interactionPrefsPath); }
+var infoGroup = embeddedCatalog.Groups.Single(g => g.Key == "info");
+var copyGroup = embeddedCatalog.Groups.Single(g => g.Key == "copy");
+Check(infoGroup.Members.Select(m => m.Name).SequenceEqual(new[] { "info", "infoRange" })
+    && copyGroup.Members.Select(m => m.Name).SequenceEqual(new[] { "copy", "copy-message", "triggerRange", "autoTrigger" }), "Add Attributes exposes the exact Info and Copy bundles without adding XML settings");
+var lowercaseRange = XElement.Parse("<POI inforange='4'/>");
+AttributeRules.Apply([lowercaseRange], new Dictionary<string, string?> { ["infoRange"] = "8" }, (_, _) => true);
+Check(lowercaseRange.Attributes().Count() == 1 && (string?)lowercaseRange.Attribute("inforange") == "8", "Editing lowercase inforange does not introduce a second case alias");
+Check((string?)XElement.Parse(new XElement("POI", new XAttribute("info", "A\nB"), new XAttribute("copy", "[&BOAHAAA=] 漢字")).ToString()).Attribute("info") == "A\nB", "Intentional Info line breaks survive XML serialization");
+
+// Source/document lifecycle and export inclusion regression coverage.
+Check(ProjectDocuments.NewPath("main", ProjectDocumentKind.Lua) == "scripts/main.lua"
+    && ProjectDocuments.NewPath("README.MD", ProjectDocumentKind.Markdown) == "DOCS/README.MD"
+    && ProjectDocuments.NewPath("notes", ProjectDocumentKind.PlainText) == "DOCS/notes.txt", "New source/documents use lazy scripts and DOCS folders with one extension");
+bool invalidDocumentName = false;
+try { ProjectDocuments.NewPath("../escape", ProjectDocumentKind.Lua); }
+catch (InvalidOperationException) { invalidDocumentName = true; }
+Check(invalidDocumentName, "New document names cannot escape their designated folder");
+string authorRoot = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AuthorDocs_" + Guid.NewGuid().ToString("N"));
+System.IO.Directory.CreateDirectory(authorRoot);
+try
+{
+    string luaSource = "-- long comment\nlocal message = 'hello'\nreturn message\n";
+    string markdownSource = "# Build notes\n\n- [x] Tested\n\n| Build | Status |\n| --- | --- |\n| 3b | Beta |\n\n```lua\nreturn 1\n```\n";
+    var author = new ProjectSnapshot("Author Pack", "", [new("markers.xml", "<OverlayData><MarkerCategory name='author_pack' DisplayName='Author Pack'/><POIs/></OverlayData>")], new(),
+        CodeDocuments: [new("scripts/main.lua", luaSource, true), new("DOCS/README.md", markdownSource, false), new("DOCS/notes.txt", "Plain text\n", true)], IncludeDocumentation: false);
+    string authorFile = ProjectStore.Create(author, authorRoot);
+    var loadedAuthor = ProjectStore.Load(authorFile);
+    Check(!loadedAuthor.IncludeDocumentation && loadedAuthor.CodeDocuments!.Select(d => d.Open).SequenceEqual(new[] { true, false, true }), "Document inclusion and open/closed view state persist per project");
+    Check(loadedAuthor.CodeDocuments![0].Content == luaSource && loadedAuthor.CodeDocuments[1].Content == markdownSource, "Save/reopen preserves source content and terminal newlines exactly");
+    string authorFolder = System.IO.Path.GetDirectoryName(authorFile)!;
+    string builtDocs = System.IO.Path.Combine(authorRoot, "docs-on.taco");
+    TestPackBuilder.Build(builtDocs, author.Documents.Select(d => (d.Name,d.Content)).ToList(), authorFolder, codeDocuments: author.CodeDocuments, includeDocumentation: true);
+    using (var zip = System.IO.Compression.ZipFile.OpenRead(builtDocs))
+    {
+        Check(zip.GetEntry("scripts/main.lua") != null && zip.GetEntry("DOCS/README.md") != null && zip.GetEntry("DOCS/notes.txt") != null, "Documentation inclusion packages tracked scripts, Markdown and text without XML injection");
+    }
+    string builtNoDocs = System.IO.Path.Combine(authorRoot, "docs-off.taco");
+    TestPackBuilder.Build(builtNoDocs, author.Documents.Select(d => (d.Name,d.Content)).ToList(), authorFolder,
+        importedAssets: ["DOCS/README.md", "DOCS/notes.txt", "scripts/main.lua"], assetPaths: new ProjectAssetPaths(".",".","."), codeDocuments: author.CodeDocuments, includeDocumentation: false);
+    using (var zip = System.IO.Compression.ZipFile.OpenRead(builtNoDocs))
+    {
+        Check(zip.GetEntry("scripts/main.lua") != null && zip.GetEntry("DOCS/README.md") == null && zip.GetEntry("DOCS/notes.txt") == null, "Documentation exclusion applies to tracked text, imported assets and root asset scans while retaining Lua");
+    }
+    Check(System.IO.File.Exists(System.IO.Path.Combine(authorFolder,"DOCS/README.md")), "Excluding documentation never deletes the project copy");
+    string rendered = MarkdownPreview.Html(markdownSource, "DOCS/README.md", authorFolder);
+    Check(rendered.Contains("<h1>") && rendered.Contains("<table>") && rendered.Contains("type=\"checkbox\"") && rendered.Contains("language-lua"), "Markdown preview renders headings, GFM tables/checklists and fenced source blocks");
+    string safePreview = MarkdownPreview.Html("<script>alert(1)</script>\n\n[bad](javascript:alert)\n\n![local](../TEXTURES/icon.png)", "DOCS/README.md", authorFolder);
+    Check(!safePreview.Contains("<script>") && !safePreview.Contains("href=\"javascript:") && safePreview.Contains("TEXTURES/icon.png"), "Preview escapes raw HTML, blocks active URL schemes and resolves project-relative images");
+    bool protectedUntracked = false;
+    System.IO.File.WriteAllText(System.IO.Path.Combine(authorFolder,"DOCS/private.txt"),"Keep this");
+    try { ProjectStore.Save(authorFile, author with { CodeDocuments = [new("DOCS/private.txt", "overwrite")] }); }
+    catch (InvalidOperationException) { protectedUntracked = true; }
+    Check(protectedUntracked && System.IO.File.ReadAllText(System.IO.Path.Combine(authorFolder,"DOCS/private.txt")) == "Keep this", "Creating tracked documents cannot overwrite an existing untracked file");
+}
+finally { System.IO.Directory.Delete(authorRoot, true); }
+
+
+Check(MarkdownPreview.IsInternalNavigation(null) && MarkdownPreview.IsInternalNavigation(new Uri("about:blank"))
+    && MarkdownPreview.IsInternalNavigation(new Uri("about:blank#heading"))
+    && !MarkdownPreview.IsInternalNavigation(new Uri("https://example.com"))
+    && !MarkdownPreview.IsInternalNavigation(new Uri("javascript:alert(1)")), "Markdown preview accepts WPF in-memory navigation while retaining external-link handling");
+Check(ProjectDocuments.RenamePath("scripts/main.lua", "utilities") == "scripts/utilities.lua"
+    && ProjectDocuments.RenamePath("DOCS/README.md", "Guide.md") == "DOCS/Guide.md"
+    && ProjectDocuments.RenamePath("notes.txt", "changelog") == "changelog.txt", "Renames retain each document's folder and extension, including imported root files");
+bool renameTraversalBlocked = false;
+try { ProjectDocuments.RenamePath("DOCS/README.md", "../outside"); }
+catch (InvalidOperationException) { renameTraversalBlocked = true; }
+Check(renameTraversalBlocked, "Rename rejects path traversal");
+string managedRoot = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ManagedSources_" + Guid.NewGuid().ToString("N"));
+System.IO.Directory.CreateDirectory(managedRoot);
+try
+{
+    var sources = new ProjectSnapshot("Managed Sources", "", [new("markers.xml", "<OverlayData><MarkerCategory name='pack'/><POIs/></OverlayData>")], new(),
+        ImportedAssets: ["scripts/main.lua"], CodeDocuments: [new("scripts/main.lua", "return 17\n", true), new("DOCS/README.md", "# Keep me\n"), new("DOCS/notes.txt", "Notes\n")]);
+    string file = ProjectStore.Create(sources, managedRoot);
+    string folder = System.IO.Path.GetDirectoryName(file)!;
+    var renamed = sources with { ImportedAssets = ["scripts/utilities.lua"], CodeDocuments = [new("scripts/utilities.lua", "return 17\n", true), new("DOCS/Guide.md", "# Keep me\n"), new("DOCS/notes.txt", "Notes\n")] };
+    ProjectStore.Save(file, renamed);
+    var reloaded = ProjectStore.Load(file);
+    Check(!System.IO.File.Exists(System.IO.Path.Combine(folder,"scripts/main.lua")) && !System.IO.File.Exists(System.IO.Path.Combine(folder,"DOCS/README.md"))
+        && reloaded.CodeDocuments![0].Content == "return 17\n" && reloaded.CodeDocuments[1].Name == "DOCS/Guide.md", "Saving renamed sources removes old paths and preserves content/reopen state");
+    var deletedSourcesSnapshot = reloaded with { ImportedAssets = [], CodeDocuments = [new("DOCS/Guide.md", "# Keep me\n")] };
+    ProjectStore.Save(file, deletedSourcesSnapshot);
+    Check(!System.IO.File.Exists(System.IO.Path.Combine(folder,"scripts/utilities.lua")) && !System.IO.File.Exists(System.IO.Path.Combine(folder,"DOCS/notes.txt"))
+        && ProjectStore.Load(file).CodeDocuments!.Single().Name == "DOCS/Guide.md", "Saving source deletions removes disk files and manifest entries, retaining other documents");
+    string packed = System.IO.Path.Combine(managedRoot,"after-delete.taco");
+    TestPackBuilder.Build(packed, deletedSourcesSnapshot.Documents.Select(d => (d.Name,d.Content)).ToList(), folder,
+        assetPaths: new ProjectAssetPaths(".",".","."), codeDocuments: deletedSourcesSnapshot.CodeDocuments);
+    using var zip = System.IO.Compression.ZipFile.OpenRead(packed);
+    Check(zip.GetEntry("scripts/main.lua") == null && zip.GetEntry("scripts/utilities.lua") == null && zip.GetEntry("DOCS/README.md") == null
+        && zip.GetEntry("DOCS/notes.txt") == null && zip.GetEntry("DOCS/Guide.md") != null, "Root asset scans cannot resurrect renamed/deleted documents into compiled packs");
+}
+finally { System.IO.Directory.Delete(managedRoot,true); }
+
+Console.WriteLine("Core editing, export, GPU geometry, trail picking, history, preferences, interactions and search checks passed.");

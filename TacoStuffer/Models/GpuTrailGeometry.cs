@@ -4,11 +4,12 @@ using System.Runtime.InteropServices;
 namespace TacoStuffer.Models;
 
 [StructLayout(LayoutKind.Sequential)]
-public readonly struct TrailGpuVertex(Vector3 position, Vector2 uv, Vector3 center)
+public readonly struct TrailGpuVertex(Vector3 position, Vector2 uv, Vector3 center, float mapDistance = 0)
 {
     public readonly Vector3 Position = position;
     public readonly Vector2 Uv = uv;
     public readonly Vector3 Center = center;
+    public readonly float MapDistance = mapDistance;
 }
 
 public static class GpuTrailGeometry
@@ -16,12 +17,12 @@ public static class GpuTrailGeometry
     // Four vertices per edge keep the same flat ribbon shape as the existing
     // preview. UV distance never depends on point IDs or camera position.
     public static TrailGpuVertex[] Build(EditableTrail trail, TrailSegment segment,
-        IReadOnlyDictionary<string, Vector3>? preview = null, int firstEdge = 1, float initialLength = 0)
+        IReadOnlyDictionary<string, Vector3>? preview = null, int firstEdge = 1, float initialLength = 0, float initialMapLength = 0)
     {
         if (segment.Points.Count < 2) return [];
         firstEdge = Math.Clamp(firstEdge, 1, segment.Points.Count);
         var vertices = new List<TrailGpuVertex>(checked((segment.Points.Count - firstEdge) * 4));
-        float length = initialLength;
+        float length = initialLength, mapLength = initialMapLength;
         Vector3 Position(TrailPoint p) => preview != null && preview.TryGetValue($"point|{trail.Number}|{segment.Id}|{p.Id}", out var moved) ? moved : p.Position;
         for (int i = firstEdge; i < segment.Points.Count; i++)
         {
@@ -31,13 +32,15 @@ public static class GpuTrailGeometry
             var direction = b - a;
             float distance = direction.Length();
             if (!float.IsFinite(distance) || distance < .000001f) continue;
+            float mapDistance = new Vector2(direction.X, direction.Z).Length();
             var side = Vector3.Cross(direction, Vector3.UnitY);
             side = side.LengthSquared() < .000001f ? Vector3.UnitX * .508f : Vector3.Normalize(side) * .508f;
-            vertices.Add(new(a - side, new(0, -length), a));
-            vertices.Add(new(a + side, new(1, -length), a));
-            vertices.Add(new(b + side, new(1, -(length + distance)), b));
-            vertices.Add(new(b - side, new(0, -(length + distance)), b));
+            vertices.Add(new(a - side, new(0, -length), a, -mapLength));
+            vertices.Add(new(a + side, new(1, -length), a, -mapLength));
+            vertices.Add(new(b + side, new(1, -(length + distance)), b, -(mapLength + mapDistance)));
+            vertices.Add(new(b - side, new(0, -(length + distance)), b, -(mapLength + mapDistance)));
             length += distance;
+            mapLength += mapDistance;
         }
         return vertices.ToArray();
     }

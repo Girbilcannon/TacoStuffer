@@ -25,7 +25,7 @@ public partial class MainWindow
 
     private bool CustomShortcut(KeyEventArgs e)
     {
-        if (Keyboard.FocusedElement is TextBoxBase) return false;
+        if (Keyboard.FocusedElement is TextBoxBase || codePages.Any(p => p.Editor.IsKeyboardFocusWithin)) return false;
         Key key = e.Key == Key.System ? e.SystemKey : e.Key;
         int code = KeyInterop.VirtualKeyFromKey(key), modifiers = (int)Keyboard.Modifiers;
         var binding = preferences.Keybinds.FirstOrDefault(p => p.Value.VirtualKey == code && p.Value.Modifiers == modifiers);
@@ -38,13 +38,14 @@ public partial class MainWindow
     private void ExecuteCustomAction(string action)
     {
         if (workspaceBusy || projectFile == null) return;
+        if (action == "interact") { CopyNearbyMarker(); return; }
         FlushHistoryCheckpoint();
-        if (action == "category" && (overlay == null || !overlay.IsVisible || (IsActive && !Services.NativeGameWindow.IsGameInputActive(gameClient))))
+        if (action == "category" && (overlay == null || !overlay.IsRenderingActive || (IsActive && !Services.NativeGameWindow.IsGameInputActive(gameClient))))
         {
             AddCategory(this, new RoutedEventArgs());
             return;
         }
-        if (overlay?.IsVisible == true) overlay.InvokeShortcut(action);
+        if (overlay?.IsRenderingActive == true) overlay.InvokeShortcut(action);
     }
 
     [DllImport("user32.dll")]

@@ -1,0 +1,4 @@
+<AttributeGroup version="1" key="info" displayName="Info" appliesTo="POI,MarkerCategory">
+  <Attribute name="info" default="" type="multiline" optional="false" />
+  <Attribute name="infoRange" default="2" type="number" optional="true" />
+</AttributeGroup>

@@ -182,13 +182,38 @@ public static class NativeGameWindow
     public static bool IsTopmost(nint hwnd) => hwnd != 0 && IsWindow(hwnd)
         && ((IntPtr.Size == 8 ? GetWindowLongPtr64(hwnd, -20).ToInt64() : GetWindowLong32(hwnd, -20)) & 8) != 0;
 
-    public static bool PlaceOverlay(nint hwnd, nint above, int x, int y, int width, int height, bool show)
+    // Standalone overlays yield to the editor. In Play in App, both floating
+    // controls and game-bound render surfaces stay above the app/game child.
+    public static nint EditorOcclusionWindow { get; set; }
+    public static bool HostedGameOverlay { get; set; }
+    public static nint OcclusionFor(bool gameSurface) => HostedGameOverlay ? 0 : EditorOcclusionWindow;
+    public static bool HasCorrectOverlayBand(nint hwnd, bool gameSurface) => IsTopmost(hwnd) == (OcclusionFor(gameSurface) == 0);
+
+    public static bool PlaceOverlay(nint hwnd, nint above, int x, int y, int width, int height, bool show, bool gameSurface = false)
     {
-        // Inserting after a non-topmost HWND demotes an overlay. WPF's
-        // cached Topmost property does not detect that native change.
-        if (!IsTopmost(hwnd) && !SetWindowPos(hwnd, new nint(-1), 0, 0, 0, 0, 0x0013)) return false;
-        nint after = above != 0 && IsWindowVisible(above) && IsTopmost(above) ? above : new nint(-1);
+        nint editor = OcclusionFor(gameSurface);
+        nint after;
+        if (editor != 0 && IsWindowVisible(editor))
+        {
+            if (IsTopmost(hwnd) && !SetWindowPos(hwnd, new nint(-2), 0, 0, 0, 0, 0x0013)) return false;
+            after = above != hwnd && above != 0 && IsWindowVisible(above) && !IsTopmost(above) ? above : editor;
+        }
+        else
+        {
+            if (!IsTopmost(hwnd) && !SetWindowPos(hwnd, new nint(-1), 0, 0, 0, 0, 0x0013)) return false;
+            after = above != hwnd && above != 0 && IsWindowVisible(above) && IsTopmost(above) ? above : new nint(-1);
+        }
         return SetWindowPos(hwnd, after, x, y, width, height, show ? 0x0050u : 0x0010u);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MonitorInfo { public uint Size; public Rect Monitor, Work; public uint Flags; }
+    [DllImport("user32.dll")] private static extern nint MonitorFromWindow(nint hwnd, uint flags);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)] private static extern bool GetMonitorInfoW(nint monitor, ref MonitorInfo info);
+    public static Rect MonitorWorkArea(nint hwnd, Rect fallback)
+    {
+        var info = new MonitorInfo { Size = (uint)Marshal.SizeOf<MonitorInfo>() };
+        return GetMonitorInfoW(MonitorFromWindow(hwnd, 2), ref info) ? info.Work : fallback;
     }
 
     [DllImport("user32.dll")]

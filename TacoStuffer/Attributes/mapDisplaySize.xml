@@ -1,3 +1,4 @@
 <AttributeGroup version="1" key="mapDisplaySize" displayName="Mapdisplaysize" appliesTo="POI,Trail,MarkerCategory">
-  <Attribute name="mapDisplaySize" default="60" type="string" optional="false" />
+  <Attribute name="mapDisplaySize" default="20" type="string" optional="false" />
+  <Attribute name="scaleOnMapWithZoom" default="true" type="bool" optional="true" />
 </AttributeGroup>

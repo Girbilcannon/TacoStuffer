@@ -198,7 +198,7 @@ public static class TacoImporter
                     skipped.Add(label + " — " + ex.Message);
                 }
             }
-        var code = assets.Where(e => e.Key.EndsWith(".lua", StringComparison.OrdinalIgnoreCase)).Select(e => new ProjectCode(e.Key, Encoding.UTF8.GetString(e.Value))).ToList();
+        var code = assets.Where(e => ProjectDocuments.Kind(e.Key) != null).Select(e => new ProjectCode(e.Key, Encoding.UTF8.GetString(e.Value))).ToList();
         var snapshot = new ProjectSnapshot(name, output, documents.Select((d, i) => new ProjectXml(d.Name, d.Xml.ToString(), i < 5)).ToList(), new Dictionary<string, string>(), CategoryOrder.Collect(documents.Select(d => d.Xml)), Trails: trails, NextTrailNumber: trails.Count + 1, ImportedAssets: assets.Keys.ToList(), CodeDocuments: code, AssetPaths: ProjectAssetPaths.Infer(documents.Select(d => d.Xml)));
         string project = ProjectStore.Create(snapshot, storage);
         try

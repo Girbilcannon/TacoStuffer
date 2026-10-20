@@ -22,6 +22,11 @@ public partial class MainWindow
 
     private void DeleteSelection()
     {
+        if (ElementsList.SelectedItems.Cast<ExplorerRow>().Any(r => r.Kind == "code"))
+        {
+            DeleteCodeSelection();
+            return;
+        }
         if (ElementsList.SelectedItems.Cast<ExplorerRow>().Any(r => r.Kind == "document"))
         {
             DeleteXmlSelection();

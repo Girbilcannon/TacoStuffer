@@ -16,7 +16,7 @@ public sealed class HostedCodeWindow : Window
     private (int X, int Y, int Width, int Height)? lastBounds;
     public HostedCodeWindow(Action hide)
     {
-        Title = "XML — Taco Stuffer";
+        Title = "Code — Taco Stuffer";
         WindowStyle = WindowStyle.None;
         ResizeMode = ResizeMode.NoResize;
         AllowsTransparency = true;
@@ -28,7 +28,7 @@ public sealed class HostedCodeWindow : Window
         Height = 500;
         var layout = new DockPanel();
         var header = new DockPanel { Margin = new Thickness(10, 6, 6, 6) };
-        var close = new Button { Content = "×", Padding = new Thickness(7, 2, 7, 2), ToolTip = "Hide XML; keep editing state" };
+        var close = new Button { Content = "×", Padding = new Thickness(7, 2, 7, 2), ToolTip = "Hide code; keep editing state" };
         close.Click += (_, _) => hide();
         DockPanel.SetDock(close, Dock.Right);
         header.Children.Add(close);
@@ -50,7 +50,7 @@ public sealed class HostedCodeWindow : Window
 
     private static Brush BackgroundAt(double percent) => new SolidColorBrush(Color.FromArgb((byte)Math.Round(percent * 2.55), 17, 25, 32));
 
-    public void SetEditor(RichTextBox editor, string name)
+    public void SetEditor(FrameworkElement editor, string name)
     {
         editorHost.Content = editor;
         Rename(name);

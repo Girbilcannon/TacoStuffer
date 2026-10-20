@@ -62,7 +62,7 @@ public static class MapRibbonProjection
         return basis.X.LengthSquared() > 1e-12f;
     }
 
-    public static float Width(float size, int uiSize) => 3 * Math.Clamp(size * .2f * MapProjection.UiScale(uiSize), .5f, 256);
+    public static float Width(float size, int uiSize) => ScaleNormalization.MapTrailWidth(size, 1, true, uiSize, 1, 1);
 
-    public static float UvScale(MapRibbonBasis basis, float width, float trailScale) => basis.X.Length() / width * Math.Max(.001f, Math.Abs(trailScale));
+    public static float UvScale(MapRibbonBasis basis, float width, float trailScale) => basis.X.Length() / Math.Max(1, width);
 }

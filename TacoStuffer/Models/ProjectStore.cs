@@ -6,11 +6,11 @@ using System.Xml.Linq;
 
 namespace TacoStuffer.Models;
 
-public sealed record ProjectCode(string Name, string Content);
+public sealed record ProjectCode(string Name, string Content, bool Open = false);
 
 public sealed record ProjectXml(string Name, string Content, bool Open = true);
 
-public sealed record ProjectSnapshot(string Name, string OutputFolder, List<ProjectXml> Documents, Dictionary<string, string> TextureLabels, List<string>? CategoryOrder = null, List<string>? CollapsedElements = null, long NextMarkerNumber = 1, List<EditableTrail>? Trails = null, long NextTrailNumber = 1, List<string>? ImportedAssets = null, List<ProjectCode>? CodeDocuments = null, ProjectAssetPaths? AssetPaths = null);
+public sealed record ProjectSnapshot(string Name, string OutputFolder, List<ProjectXml> Documents, Dictionary<string, string> TextureLabels, List<string>? CategoryOrder = null, List<string>? CollapsedElements = null, long NextMarkerNumber = 1, List<EditableTrail>? Trails = null, long NextTrailNumber = 1, List<string>? ImportedAssets = null, List<ProjectCode>? CodeDocuments = null, ProjectAssetPaths? AssetPaths = null, bool IncludeDocumentation = true);
 
 public static class ProjectStore
 {
@@ -102,8 +102,11 @@ public static class ProjectStore
         if (assets.Concat(codeNames).Any(p => !ValidPackPath(p))) throw new InvalidOperationException("Invalid imported asset path.");
         var pathsNode = root.Element("AssetPaths");
         var assetPaths = new ProjectAssetPaths((string?)pathsNode?.Attribute("markerIcons") ?? "TEXTURES", (string?)pathsNode?.Attribute("trailTextures") ?? "TEXTURES", (string?)pathsNode?.Attribute("trailFiles") ?? "DATA").Validated();
-        var code = codeNames.Select(p => new ProjectCode(p, File.ReadAllText(Path.Combine(folder, p)))).ToList();
-        return new(name, (string?)root.Attribute("tacoOutputFolder") ?? "", documents, labels, order, collapsed, nextMarker, trails, nextTrail, assets, code, pathsNode == null ? null : assetPaths);
+        if (codeNames.Distinct(StringComparer.OrdinalIgnoreCase).Count() != codeNames.Count || codeNames.Any(p => ProjectDocuments.Kind(p) == null || names.Contains(p, StringComparer.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("Code/document filenames must be supported, unique and separate from XML files.");
+        var openCode = root.Element("CodeDocuments")?.Elements("File").ToDictionary(e => (string)e.Attribute("path")!, e => (string?)e.Attribute("open") == "true", StringComparer.OrdinalIgnoreCase) ?? new();
+        var code = codeNames.Select(p => new ProjectCode(p, File.ReadAllText(Path.Combine(folder, p)), openCode[p])).ToList();
+        return new(name, (string?)root.Attribute("tacoOutputFolder") ?? "", documents, labels, order, collapsed, nextMarker, trails, nextTrail, assets, code, pathsNode == null ? null : assetPaths, !string.Equals((string?)root.Attribute("includeDocumentation"), "false", StringComparison.OrdinalIgnoreCase));
     }
 
     public static string Create(ProjectSnapshot snapshot, string parentFolder)
@@ -155,10 +158,10 @@ public static class ProjectStore
         if (snapshot.NextTrailNumber < 1) throw new InvalidOperationException("Invalid next trail number.");
         if (snapshot.NextMarkerNumber < 1) throw new InvalidOperationException("Invalid next marker number.");
         var assetPaths = (snapshot.AssetPaths ?? new()).Validated();
-        var manifest = new XDocument(new XElement("CilantroProject", new XAttribute("version", "1"), new XAttribute("name", snapshot.Name), new XAttribute("tacoOutputFolder", snapshot.OutputFolder), new XAttribute("nextMarkerNumber", snapshot.NextMarkerNumber), new XAttribute("nextTrailNumber", snapshot.NextTrailNumber),
+        var manifest = new XDocument(new XElement("CilantroProject", new XAttribute("version", "1"), new XAttribute("includeDocumentation", snapshot.IncludeDocumentation ? "true" : "false"), new XAttribute("name", snapshot.Name), new XAttribute("tacoOutputFolder", snapshot.OutputFolder), new XAttribute("nextMarkerNumber", snapshot.NextMarkerNumber), new XAttribute("nextTrailNumber", snapshot.NextTrailNumber),
             new XElement("AssetPaths", new XAttribute("markerIcons", assetPaths.MarkerIcons), new XAttribute("trailTextures", assetPaths.TrailTextures), new XAttribute("trailFiles", assetPaths.TrailFiles)),
             new XElement("ImportedAssets", (snapshot.ImportedAssets ?? []).Select(p => new XElement("File", new XAttribute("path", p)))),
-            new XElement("CodeDocuments", (snapshot.CodeDocuments ?? []).Select(p => new XElement("File", new XAttribute("path", p.Name)))),
+            new XElement("CodeDocuments", (snapshot.CodeDocuments ?? []).Select(p => new XElement("File", new XAttribute("path", p.Name), new XAttribute("open", p.Open ? "true" : "false")))),
             new XElement("EditableTrails", (snapshot.Trails ?? []).Select(t => new XElement("Trail", new XAttribute("number", t.Number)))),
             new XElement("Documents", snapshot.Documents.Select(d => new XElement("Xml", new XAttribute("file", d.Name), new XAttribute("open", d.Open ? "true" : "false")))),
             new XElement("TextureLabels", snapshot.TextureLabels.Select(p => new XElement("Texture", new XAttribute("path", p.Key), new XAttribute("displayName", p.Value)))),
@@ -176,11 +179,25 @@ public static class ProjectStore
             if (File.Exists(path) && !oldNames.Contains(doc.Name, StringComparer.OrdinalIgnoreCase)) throw new InvalidOperationException("An untracked XML already exists: " + doc.Name);
             writes.Add(path, Encoding.UTF8.GetBytes(doc.Content));
         }
-        foreach (var code in snapshot.CodeDocuments ?? []) writes.Add(Path.Combine(folder, code.Name), Encoding.UTF8.GetBytes(code.Content));
+        var oldManifest = File.Exists(file) ? ReadXml(file).Root : null;
+        var trackedCode = (oldManifest?.Element("CodeDocuments")?.Elements("File") ?? Enumerable.Empty<XElement>())
+            .Concat(oldManifest?.Element("ImportedAssets")?.Elements("File") ?? Enumerable.Empty<XElement>())
+            .Select(e => (string?)e.Attribute("path") ?? "").ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var code in snapshot.CodeDocuments ?? [])
+        {
+            if (ProjectDocuments.Kind(code.Name) == null || names.Contains(code.Name, StringComparer.OrdinalIgnoreCase)) throw new InvalidOperationException("Invalid code/document path: " + code.Name);
+            string codePath = Path.Combine(folder, code.Name);
+            if (File.Exists(codePath) && !trackedCode.Contains(code.Name)) throw new InvalidOperationException("An untracked file already exists: " + code.Name);
+            writes.Add(codePath, Encoding.UTF8.GetBytes(code.Content));
+        }
         Directory.CreateDirectory(Path.Combine(folder, EditableTrails.Folder));
         foreach (var trail in snapshot.Trails ?? []) writes.Add(Path.Combine(folder, EditableTrails.Folder, EditableTrails.FileName(trail.Number)), Encoding.UTF8.GetBytes(EditableTrails.Serialize(trail)));
         writes.Add(Path.GetFullPath(file), Encoding.UTF8.GetBytes(manifest.ToString()));
-        var obsolete = oldNames.Where(n => !names.Contains(n, StringComparer.OrdinalIgnoreCase)).Select(n => Path.Combine(folder, n)).ToList();
+        var oldCodeNames = (oldManifest?.Element("CodeDocuments")?.Elements("File") ?? Enumerable.Empty<XElement>())
+            .Select(e => (string?)e.Attribute("path") ?? "").ToList();
+        if (oldCodeNames.Any(p => !ValidPackPath(p) || ProjectDocuments.Kind(p) == null)) throw new InvalidOperationException("Invalid previous document path.");
+        var retainedCode = (snapshot.CodeDocuments ?? []).Select(p => p.Name).Concat(snapshot.ImportedAssets ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var obsolete = oldNames.Where(n => !names.Contains(n, StringComparer.OrdinalIgnoreCase)).Select(n => Path.Combine(folder, n)).Concat(oldCodeNames.Where(n => !retainedCode.Contains(n)).Select(n => Path.Combine(folder, n))).ToList();
         var backup = writes.Keys.Concat(obsolete).Distinct(StringComparer.OrdinalIgnoreCase).ToDictionary(p => p, p => File.Exists(p) ? File.ReadAllBytes(p) : null, StringComparer.OrdinalIgnoreCase);
         try
         {
