@@ -4,7 +4,7 @@
 **Developer attribution: Girbilcannon.8259.**
 
 The full terms are in [LICENSE.txt](LICENSE.txt): the **Taco Stuffer Personal-Use
-License, version 0.1.2b**. It is a custom proprietary/source-available license,
+License, version 0.1.3b**. It is a custom proprietary/source-available license,
 not MIT, GPL or an OSI-approved open-source license.
 
 ### Allowed

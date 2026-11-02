@@ -36,4 +36,7 @@ Even if you are on a laptop or only have one monitor, Taco Stuffer offers not on
 
 
 ### Stuffing The Taco!
-This is project compiling made easy! when you are ready to make the **.taco** file to test out in your favorite pathing tool, simply click the **STUFF TACO NOW!** button in the top right and your entire project will be packed up, placed in the proper folder you specify, and ready to go.
+This is project compiling made easy! when you are ready to make the **.taco** file to test out in your favorite pathing tool, simply click the **STUFF TACO NOW!** button in the top right and your entire project will be packed up, placed in the proper folder you specify, and ready to go.<br />
+
+[![AI Assisted Yes](https://img.shields.io/badge/AI%20Assisted-Yes-green?style=for-the-badge)](https://github.com/mefengl/made-by-ai)<br />
+Even though I am happy to say that most of this tool was developed directly by a human, there are still a fair amount of features within where the use of AI was necessary. Because of this, I have locked down coding to only accept very specific XML and never execute internal Lua Scripts. There is also no unauthorized machine, internet, or game account access anywhere in this tool, only using publicly accessible game telemetry data.

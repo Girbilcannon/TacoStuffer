@@ -1,6 +1,6 @@
 # Known issues and beta limitations
 
-Applies to the 0.1.1b beta documentation baseline. Reports may reveal additional
+Applies to the 0.1.3b beta documentation baseline. Reports may reveal additional
 issues; a source change does not establish that a published EXE was tested.
 
 | Area | Limitation / guidance |
