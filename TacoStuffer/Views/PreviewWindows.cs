@@ -17,19 +17,34 @@ public abstract class PreviewDialog : Window
     protected readonly StackPanel Body = new() { Margin = new Thickness(24) };
     protected PreviewDialog(string title, double width = 500)
     {
+        // Owned modal windows must activate and finish layout as one complete
+        // surface; do not inherit the overlay's non-activating presentation.
+        ShowActivated = true;
+        ContentRendered += (_, _) =>
+        {
+            if (Owner == null || Owner.IsEnabled) return;
+            Topmost = true;
+            Activate();
+            UpdateLayout();
+            InvalidateVisual();
+            MoveFocus(new TraversalRequest(FocusNavigationDirection.First));
+        };
         Title = title;
         Width = width;
         SizeToContent = SizeToContent.Height;
         MaxHeight = SystemParameters.WorkArea.Height - 40;
         ResizeMode = ResizeMode.NoResize;
         WindowStyle = WindowStyle.None;
+        AllowsTransparency = false;
+        Opacity = 1;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Background = (Brush)Application.Current.FindResource("BackgroundBrush");
         Foreground = Brushes.White;
         FontFamily = new FontFamily("Segoe UI");
         FontSize = 13;
-        var frame = new Border { BorderBrush = (Brush)Application.Current.FindResource("LineBrush"), BorderThickness = new Thickness(1) };
-        var dock = new DockPanel();
+        var frame = new Border { Background = Background, SnapsToDevicePixels = true, BorderBrush = (Brush)Application.Current.FindResource("LineBrush"), BorderThickness = new Thickness(1) };
+        Body.Background = Background;
+        var dock = new DockPanel { Background = Background };
         var caption = CaptionBar = new DockPanel { Background = (Brush)Application.Current.FindResource("PanelBrush"), LastChildFill = true };
         var close = new Button { Content = "×", Padding = new Thickness(12, 5, 12, 5), Margin = new Thickness(5) };
         close.Click += (_, _) => Close();
@@ -96,6 +111,9 @@ public sealed class PreferencesWindow : PreviewDialog
         var visuals = new StackPanel { Margin = new Thickness(12) };
         visuals.Children.Add(markerNames);
         visuals.Children.Add(selectedNames);
+        var markerRanges = new CheckBox { Content = "Show Marker Range", IsChecked = Preferences.ShowMarkerRange, Margin = new Thickness(0,0,0,10), ToolTip = "Show labeled effective range rings around selected markers in the world, full map and minimap." };
+        visuals.Children.Add(markerRanges);
+        markerRanges.Click += (_, _) => { Preferences.ShowMarkerRange = markerRanges.IsChecked == true; VisualPreviewChanged?.Invoke(Preferences); };
         var nameDistanceLabel = new TextBlock { Margin = new Thickness(0, 0, 0, 4) };
         var nameDistance = new Slider
         {
@@ -140,6 +158,20 @@ public sealed class PreferencesWindow : PreviewDialog
             trailModes[mode] = choice;
             visuals.Children.Add(choice);
         }
+        var minimizeGlow = new CheckBox { Content = "Enable Overlay minimize glow", IsChecked = Preferences.EnableOverlayMinimizeGlow, Margin = new Thickness(0, 14, 0, 8) };
+        minimizeGlow.Click += (_, _) =>
+        {
+            if (updatingVisuals) return;
+            Preferences.EnableOverlayMinimizeGlow = minimizeGlow.IsChecked == true;
+            VisualPreviewChanged?.Invoke(Preferences);
+        };
+        visuals.Children.Add(minimizeGlow);
+        var playerFade = new CheckBox { Content = "Preview fade around player", IsChecked = Preferences.PreviewFadeAroundPlayer };
+        var cameraFade = new CheckBox { Content = "Preview marker fade between player and camera", IsChecked = Preferences.PreviewFadeBetweenCamera };
+        playerFade.Click += (_, _) => { Preferences.PreviewFadeAroundPlayer = playerFade.IsChecked == true; VisualPreviewChanged?.Invoke(Preferences); };
+        cameraFade.Click += (_, _) => { Preferences.PreviewFadeBetweenCamera = cameraFade.IsChecked == true; VisualPreviewChanged?.Invoke(Preferences); };
+        visuals.Children.Add(playerFade); visuals.Children.Add(cameraFade);
+        visuals.Children.Add(new TextBlock { Text = "canFade=0 bypasses these optional preview fades. Explicit Fade Near/Far still applies.", TextWrapping = TextWrapping.Wrap });
         var showInfo = new CheckBox { Content = "Show marker information", IsChecked = Preferences.ShowMarkerInformation, Margin = new Thickness(0, 14, 0, 8) };
         void PreviewInfoSetting()
         {
@@ -309,9 +341,12 @@ public sealed class PreferencesWindow : PreviewDialog
                 tacoStyle.IsChecked = true;
                 markerNames.IsChecked = Preferences.ShowMarkerNames;
                 selectedNames.IsChecked = Preferences.OnlyShowForSelected;
+                markerRanges.IsChecked = Preferences.ShowMarkerRange;
                 nameDistance.Value = Preferences.MarkerNameDistanceThreshold;
                 trailModes[Preferences.TrailOverlaySelection].IsChecked = true;
                 showInfo.IsChecked = Preferences.ShowMarkerInformation;
+                minimizeGlow.IsChecked = Preferences.EnableOverlayMinimizeGlow;
+                playerFade.IsChecked = Preferences.PreviewFadeAroundPlayer; cameraFade.IsChecked = Preferences.PreviewFadeBetweenCamera;
                 clipboardChoices[Preferences.MarkerClipboard].IsChecked = true;
             }
             finally { updatingVisuals = false; }
@@ -429,16 +464,28 @@ public sealed class UnsavedProjectWindow : PreviewDialog
 public sealed class AttributePickerWindow : PreviewDialog
 {
     private readonly List<(CheckBox Choice, AttributeDefinition Group)> choices = [];
+    private readonly List<(CheckBox Choice, AttributeMemberSelection Member)> memberChoices = [];
     public List<AttributeDefinition> SelectedGroups { get; } = [];
+    public List<AttributeMemberSelection> SelectedMembers { get; } = [];
     public AttributePickerWindow(List<AttributeDefinition> definitions, Action reload) : base("Add Attributes", 490)
     {
+        SizeToContent = SizeToContent.Manual;
+        Height = Math.Min(620, MaxHeight);
+        MinHeight = Math.Min(320, Height);
+        MinWidth = 390;
+        ResizeMode = ResizeMode.CanResizeWithGrip;
+        System.Windows.Shell.WindowChrome.SetWindowChrome(this, new System.Windows.Shell.WindowChrome
+        {
+            CaptionHeight = 0, ResizeBorderThickness = new Thickness(6), GlassFrameThickness = new Thickness(0), CornerRadius = new CornerRadius(0)
+        });
         foreach (bool custom in new[] { false, true })
         {
-            Label(custom ? "CUSTOM" : "STANDARD / TAQUITO");
+            if (custom) Label("CUSTOM");
             foreach (var group in definitions.Where(g => g.IsCustom == custom && !g.Key.Equals("visibility", StringComparison.OrdinalIgnoreCase)))
             {
-                var c = new CheckBox { Content = group.DisplayName, ToolTip = string.Join(", ", group.Members.Select(m => m.Name)) };
+                var c = new CheckBox { Content = group.DisplayName, Margin = new Thickness(0), VerticalAlignment = VerticalAlignment.Center, ToolTip = string.Join(", ", group.Members.Select(m => m.Name)) };
                 choices.Add((c, group));
+                UIElement header = c;
                 if (group.Key.Equals("fade", StringComparison.OrdinalIgnoreCase))
                 {
                     var row = new DockPanel { LastChildFill = true };
@@ -453,23 +500,99 @@ public sealed class AttributePickerWindow : PreviewDialog
                     DockPanel.SetDock(note, Dock.Right);
                     row.Children.Add(note);
                     row.Children.Add(c);
-                    Body.Children.Add(row);
+                    header = row;
                 }
-                else Body.Children.Add(c);
+                if (AttributePickerOptions.CanSplit(group))
+                {
+                    c.ToolTip = "Add the full " + group.DisplayName + " control bundle. Use the children for individual fields.";
+                    var children = new StackPanel { Visibility = Visibility.Collapsed };
+                    bool synchronizing = false;
+                    var members = new List<CheckBox>();
+                    for (int index = 0; index < group.Members.Count; index++)
+                    {
+                        var member = group.Members[index];
+                        var choice = new CheckBox {
+                            Content = AttributePickerOptions.Label(member.Name),
+                            ToolTip = "Add only " + member.Name + ". Inherited values are retained; other attributes are not added.",
+                            Margin = new Thickness(0), VerticalAlignment = VerticalAlignment.Center
+                        };
+                        members.Add(choice);
+                        memberChoices.Add((choice, new(group, member.Name)));
+                        choice.Checked += (_, _) => {
+                            if (synchronizing) return;
+                            synchronizing = true; c.IsChecked = false; synchronizing = false;
+                        };
+                        var branch = new ExplorerRowView {
+                            Row = new ExplorerRow("", "", null, 1, "attributeChoice", member.Name) { HasNextSibling = index < group.Members.Count - 1 },
+                            Width = 44, Height = 24
+                        };
+                        children.Children.Add(HierarchyRow(choice, branch, 44));
+                    }
+                    c.Checked += (_, _) => {
+                        if (synchronizing) return;
+                        synchronizing = true;
+                        foreach (var member in members) member.IsChecked = false;
+                        synchronizing = false;
+                    };
+                    var toggle = new ExplorerRowView {
+                        Row = new ExplorerRow("", "", null, 0, "attributeChoice", group.Key) { HasChildren = true, Expanded = false },
+                        Width = 22, Height = 24, Focusable = true
+                    };
+                    void ToggleChildren()
+                    {
+                        bool expanded = children.Visibility != Visibility.Visible;
+                        children.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
+                        toggle.Row = toggle.Row! with { Expanded = expanded };
+                        toggle.ToolTip = (expanded ? "Collapse " : "Expand ") + group.DisplayName;
+                        System.Windows.Automation.AutomationProperties.SetName(toggle, toggle.ToolTip.ToString());
+                    }
+                    toggle.ToolTip = "Expand " + group.DisplayName;
+                    System.Windows.Automation.AutomationProperties.SetName(toggle, toggle.ToolTip.ToString());
+                    toggle.AddHandler(ExplorerRowView.ToggleEvent, new RoutedEventHandler((_, e) => { ToggleChildren(); e.Handled = true; }));
+                    toggle.KeyDown += (_, e) => { if (e.Key is Key.Space or Key.Enter) { ToggleChildren(); e.Handled = true; } };
+                    Body.Children.Add(HierarchyRow(header, toggle, 22));
+                    Body.Children.Add(children);
+                }
+                else Body.Children.Add(HierarchyRow(header, null, 22));
             }
             if (custom && !definitions.Any(g => g.IsCustom)) Label("No custom definitions loaded.");
         }
-        Action("Reload Custom Definitions…", (_, _) =>
+        var footer = new StackPanel { Margin = new Thickness(24, 8, 24, 20), Background = Background };
+        void FooterAction(string title, RoutedEventHandler click)
+        {
+            var button = new Button { Content = title, Margin = new Thickness(0, 6, 0, 0) };
+            button.Click += click;
+            footer.Children.Add(button);
+        }
+        FooterAction("Reload Custom Definitions…", (_, _) =>
         {
             reload();
             DialogResult = false;
         });
-        Action("Add selected attributes", (_, _) =>
+        FooterAction("Add selected attributes", (_, _) =>
         {
             SelectedGroups.AddRange(choices.Where(c => c.Choice.IsChecked == true).Select(c => c.Group));
+            SelectedMembers.AddRange(memberChoices.Where(c => c.Choice.IsChecked == true).Select(c => c.Member));
             DialogResult = true;
         });
+        // Dock actions before the scrolling content, so they remain visible
+        // even when the standard/custom definition list is longer than the window.
+        var dock = (DockPanel)((Border)Content).Child;
+        DockPanel.SetDock(footer, Dock.Bottom);
+        dock.Children.Insert(1, footer);
     }
+    private static Grid HierarchyRow(UIElement content, ExplorerRowView? glyph, double gutter)
+    {
+        // Borrow the existing left margin for the root toggle: parent checkboxes
+        // stay at their original X. Only child checkboxes move one Outliner step.
+        var row = new Grid { Height = 24, Margin = new Thickness(-22, 0, 0, 0) };
+        row.ColumnDefinitions.Add(new() { Width = new GridLength(gutter) });
+        row.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
+        if (glyph != null) row.Children.Add(glyph);
+        Grid.SetColumn(content, 1); row.Children.Add(content);
+        return row;
+    }
+
 }
 
 public sealed class CustomExportWindow : PreviewDialog
@@ -517,12 +640,13 @@ public sealed class CustomExportWindow : PreviewDialog
 public sealed class MovePickerWindow : PreviewDialog
 {
     private readonly ComboBox choices;
-    public string Destination => choices.SelectedItem as string ?? "";
-    public MovePickerWindow(string operation, int count, List<string> targets) : base(operation == "xml" ? "Move to XML…" : "Move to different category…", 530)
+    public string Destination => choices.SelectedValue as string ?? "";
+    public MovePickerWindow(string operation, int count, List<PathChoice> targets) : base(operation == "xml" ? "Move to XML…" : "Move to different category…", 530)
     {
         Label($"{count} selected items");
         Label(operation == "xml" ? "Destination XML document" : "Destination category");
-        choices = new ComboBox { ItemsSource = targets, SelectedIndex = targets.Count > 0 ? 0 : -1 };
+        choices = PathChoicePresentation.Combo(targets);
+        choices.SelectedIndex = targets.Count > 0 ? 0 : -1;
         Body.Children.Add(choices);
         Label(operation == "xml" ? "Move the selected declarations and their assigned markers/trails to this XML. Required parent categories are retained or added. Compatible existing categories are merged." : "Move categories beneath this parent across the pack; their assigned elements follow the new path. Unrelated selected markers/trails join this category in their current XML.");
         Action("Move selected items", (_, _) =>
@@ -549,12 +673,28 @@ public sealed class RenameWindow : PreviewDialog
     private readonly TextBox display;
     public string ItemName => name.Text.Trim();
     public string DisplayName => display.Text.Trim();
-    public RenameWindow(string title, string currentName, string currentDisplayName) : base(title, 480)
+    // Asset renaming validates the raw input with the same rules as pane edits.
+    public string NameText => name.Text;
+    public string DisplayNameText => display.Text;
+    public bool NameEdited { get; private set; }
+    public bool DisplayNameEdited { get; private set; }
+    public RenameWindow(string title, string currentName, string currentDisplayName, bool batchAssets = false) : base(title, 480)
     {
+        // Small name/category dialogs use their own opaque software surface.
+        // This avoids the intermittent partially painted background over GPU-backed editor/game content.
+        SourceInitialized += (_, _) =>
+        {
+            var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+            var source = System.Windows.Interop.HwndSource.FromHwnd(handle);
+            if (source?.CompositionTarget != null) source.CompositionTarget.RenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
+        };
         Label("Name");
         name = Input(currentName);
         Label("DisplayName");
         display = Input(currentDisplayName);
+        name.TextChanged += (_, _) => NameEdited = true;
+        display.TextChanged += (_, _) => DisplayNameEdited = true;
+        if (batchAssets) Label("Edit name and/or DisplayName to number selected assets from top to bottom in the Outliner. Only edited fields are applied. Trailing numbers set the start and zero padding; internal names cannot contain spaces.");
         Action("Apply", (_, _) =>
         {
             if (ItemName.Length != 0) DialogResult = true;
@@ -589,11 +729,17 @@ public sealed class XmlRenameWindow : PreviewDialog
 
 public sealed class ConfirmActionWindow : PreviewDialog
 {
-    public ConfirmActionWindow(string title, string message) : base(title, 500)
+    public bool SplitSegment { get; private set; }
+    public ConfirmActionWindow(string title, string message, bool offerSplitSegment = false) : base(title, 500)
     {
         Label(message);
         Action("Delete", (_, _) =>
         {
+            DialogResult = true;
+        });
+        if (offerSplitSegment) Action("Delete and Split Segment", (_, _) =>
+        {
+            SplitSegment = true;
             DialogResult = true;
         });
         Action("Cancel", (_, _) =>

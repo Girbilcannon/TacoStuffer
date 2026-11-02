@@ -1,0 +1,3 @@
+<AttributeGroup version="1" key="isWall" displayName="Wall (Trails)" appliesTo="Trail,MarkerCategory">
+  <Attribute name="isWall" default="false" type="bool" optional="false" />
+</AttributeGroup>

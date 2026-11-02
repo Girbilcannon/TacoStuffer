@@ -1,6 +1,30 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+  <PropertyGroup><OutputType>Exe</OutputType><AllowUnsafeBlocks>true</AllowUnsafeBlocks><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
   <ItemGroup>
+    <Compile Include="../TacoStuffer/Models/AttributePickerOptions.cs" Link="AttributePickerOptions.cs" />
+    <Compile Include="../TacoStuffer/Models/OverlayRenderingState.cs" Link="OverlayRenderingState.cs" />
+    <Compile Include="../TacoStuffer/Models/OverlayTools.cs" Link="OverlayTools.cs" />
+    <Compile Include="../TacoStuffer/Models/OverlayPressTracker.cs" Link="OverlayPressTracker.cs" />
+    <Compile Include="../TacoStuffer/Models/MarkerRanges.cs" Link="MarkerRanges.cs" />
+    <Compile Include="../TacoStuffer/Models/TrailPointInsertion.cs" Link="TrailPointInsertion.cs" />
+    <Compile Include="../TacoStuffer/Models/PackDelivery.cs" Link="PackDelivery.cs" />
+    <Compile Include="../TacoStuffer/Models/CheckpointAttributeEditing.cs" Link="CheckpointAttributeEditing.cs" />
+    <Compile Include="../TacoStuffer/Models/HostedCodeLayout.cs" Link="HostedCodeLayout.cs" />
+    <Compile Include="../TacoStuffer/Models/TrailAssetInsertion.cs" Link="TrailAssetInsertion.cs" />
+    <Compile Include="../TacoStuffer/Models/BatchAssetNaming.cs" Link="BatchAssetNaming.cs" />
+    <Compile Include="../TacoStuffer/Models/OutlinerExpansion.cs" Link="OutlinerExpansion.cs" />
+    <Compile Include="../TacoStuffer/Models/PathingBehavior.cs" Link="PathingBehavior.cs" />
+    <Compile Include="../TacoStuffer/Models/PathChoice.cs" Link="PathChoice.cs" />
+    <Compile Include="../TacoStuffer/Models/AttributePaneRules.cs" Link="AttributePaneRules.cs" />
+    <Compile Include="../TacoStuffer/Models/AttributeRequirements.cs" Link="AttributeRequirements.cs" />
+    <Compile Include="../TacoStuffer/Models/GuidResetTargets.cs" Link="GuidResetTargets.cs" />
+    <Compile Include="../TacoStuffer/Models/CheckpointAuthoring.cs" Link="CheckpointAuthoring.cs" />
+    <Compile Include="../TacoStuffer/Models/CheckpointTestSession.cs" Link="CheckpointTestSession.cs" />
+    <Compile Include="../TacoStuffer/Models/AttributeColor.cs" Link="AttributeColor.cs" />
+    <Compile Include="../TacoStuffer/Services/Direct3D11Native.cs" Link="Direct3D11Native.cs" />
+    <Compile Include="../TacoStuffer/Models/AssetFolders.cs" Link="AssetFolders.cs" />
+    <Compile Include="../TacoStuffer/Models/XmlComments.cs" Link="XmlComments.cs" />
+    <Compile Include="../TacoStuffer/Models/AssetLibrary.cs" Link="AssetLibrary.cs" />
     <PackageReference Include="Markdig" Version="0.42.0" />
     <Compile Include="../TacoStuffer/Models/MarkdownPreview.cs" Link="MarkdownPreview.cs" />
     <Compile Include="../TacoStuffer/Models/ProjectDocuments.cs" Link="ProjectDocuments.cs" />

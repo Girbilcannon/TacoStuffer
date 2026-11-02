@@ -1,0 +1,4 @@
+<AttributeGroup version="1" key="trigger" displayName="Trigger" appliesTo="POI,MarkerCategory">
+  <Attribute name="triggerRange" default="2" type="number" optional="false" />
+  <Attribute name="autoTrigger" default="false" type="bool" optional="true" />
+</AttributeGroup>

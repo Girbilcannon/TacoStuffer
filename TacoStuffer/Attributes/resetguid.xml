@@ -1,0 +1,4 @@
+<AttributeGroup version="1" key="resetguid" displayName="Reset GUID" appliesTo="POI,MarkerCategory">
+  <Attribute name="resetguid" default="" type="guid-list" optional="false" />
+  <Attribute name="resetMessage" default="Race reset." type="multiline" optional="true" />
+</AttributeGroup>

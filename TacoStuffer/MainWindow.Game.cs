@@ -65,6 +65,7 @@ public partial class MainWindow
         {
             previewPresentationQueued = false;
             if (gameMonitorClosed) return;
+            overlayLayers.Invalidate();
             worldMarkers?.RequestPresentationRepair();
             UpdateOverlayVisibility();
         }));
@@ -75,6 +76,7 @@ public partial class MainWindow
         if (renderingWorld) return;
         CompositionTarget.Rendering += RenderWorld;
         renderingWorld = true;
+        lastWorldRenderTime = null;
     }
 
     private void StopWorldRendering()
@@ -84,7 +86,18 @@ public partial class MainWindow
         renderingWorld = false;
     }
 
-    private void RenderWorld(object? sender, EventArgs e) => UpdateWorldProjection();
+    private TimeSpan? lastWorldRenderTime;
+    private void RenderWorld(object? sender, EventArgs e)
+    {
+        // WPF can raise Rendering more than once during the same composition
+        // frame when layout changes. Submit the world only once for that frame.
+        if (e is RenderingEventArgs frame)
+        {
+            if (lastWorldRenderTime == frame.RenderingTime) return;
+            lastWorldRenderTime = frame.RenderingTime;
+        }
+        UpdateWorldProjection();
+    }
 
     private void PollGame()
     {
@@ -92,9 +105,12 @@ public partial class MainWindow
         PollGameShortcuts(overlay?.IsRenderingActive == true && NativeGameWindow.IsGameInputActive(gameClient) && mumbleSession.IsPlayable);
         long now = Environment.TickCount64;
         gameFrame = mumble.Read();
-        if (gameFrame != null || now - lastProcessProbe >= 1000)
+        var hosted = GameViewport.Client;
+        bool changedLink = gameFrame != null && gameFrame.ProcessId != (uint)gameClient.ProcessId;
+        bool changedHost = hosted.Handle != 0 && hosted.Handle != gameClient.Handle;
+        bool invalidHandle = gameClient.Handle != 0 && !NativeGameWindow.IsWindow(gameClient.Handle);
+        if (changedLink || changedHost || invalidHandle || now - lastProcessProbe >= 1000)
         {
-            var hosted = GameViewport.Client;
             gameClient = hosted.Handle != 0 && (gameFrame == null || gameFrame.ProcessId == (uint)hosted.ProcessId)
                 ? hosted : GameClientWindow.Find(gameFrame?.ProcessId ?? 0);
             lastProcessProbe = now;
@@ -108,6 +124,7 @@ public partial class MainWindow
         }
         else mumbleSession.Observe(gameFrame, now);
         bool ready = mumbleSession.IsPlayable && gameFrame?.ProcessId == (uint)gameClient.ProcessId && gameClient.Handle != 0;
+        if (overlayEditTool != OverlayEditTool.Select && (!ready || gameFrame?.MapId != trailInsertMap)) StopTrailInsertTool();
         GameConnectionDot.Foreground = ready ? (Brush)FindResource("AccentBrush") : (Brush)FindResource("TortillaBrush");
         GameConnectionText.Text = ready ? "GW2 · Map " + gameFrame!.MapId : gameClient.ProcessId == 0 ? "GW2 disconnected" : "GW2 · waiting for map";
         GameConnectionText.ToolTip = ready ? gameFrame!.CharacterName + " · MumbleLink connected" : mumble.Error ?? "Waiting for fresh character and map telemetry.";
@@ -154,23 +171,27 @@ public partial class MainWindow
         UpdateHostedOverlayButton();
         if (gameMonitorClosed || overlay == null) return;
         NativeGameWindow.HostedGameOverlay = GameViewport.IsAttached;
-        var activeEditor = Application.Current.Windows.Cast<Window>().FirstOrDefault(w => w.IsActive && w != overlay && w != worldMarkers && w is not InteractionHudWindow);
+        var activeEditor = Application.Current.Windows.Cast<Window>().FirstOrDefault(w => w.IsActive && w != overlay && w != worldMarkers && w is not InteractionHudWindow && w is not OverlayToolbarWindow);
         NativeGameWindow.EditorOcclusionWindow = activeEditor == null ? 0 : new System.Windows.Interop.WindowInteropHelper(activeEditor).Handle;
         if (gameClient.ProcessId == 0 || gameClient.ProcessId != overlay.BoundProcessId)
         {
             overlay.Close();
             return;
         }
+        overlay.SetMinimizeGlow((visualPreviewPreferences ?? preferences).EnableOverlayMinimizeGlow);
         overlay.UpdateVisibility(gameClient, mumbleSession.IsPlayable && projectFile != null, gameFrame, Environment.ProcessId, GameViewport.IsAttached);
         UpdateHostedOverlayButton();
         UpdateHostedCodeVisibility();
-        UpdateWorldProjection();
+        overlayToolbar?.UpdateVisibility(gameClient, overlay.IsRenderingActive && mumbleSession.IsPlayable);
+        UpdateToolbarLayer();
+        // Rendering owns world projection; the status timer must not submit
+        // another GPU/WPF frame in between composition frames.
     }
 
     private void UpdateWorldProjection()
     {
         if (gameMonitorClosed || overlay == null || worldMarkers == null) return;
-        if (OwnedWindows.Cast<Window>().Any(w => w != hostedCodeWindow && w.IsActive))
+        if (OwnedWindows.Cast<Window>().Any(w => w != hostedCodeWindow && w != overlayToolbar && w.IsActive))
         {
             worldMarkers.Conceal();
             return;
@@ -189,7 +210,9 @@ public partial class MainWindow
         var camera = mumble.Read();
         bool sameSession = camera != null && camera.ProcessId == (uint)overlay.BoundProcessId && camera.MapId == gameFrame?.MapId && camera.MapType == gameFrame?.MapType && camera.CharacterName == gameFrame?.CharacterName;
         if (sameSession) SampleTrail(camera!);
+        worldMarkers.ToolbarHandle = overlayToolbar?.IsVisible == true ? new System.Windows.Interop.WindowInteropHelper(overlayToolbar).Handle : 0;
         worldMarkers.InteractiveExclusionHandle = hostedCodeWindow?.IsVisible == true ? new System.Windows.Interop.WindowInteropHelper(hostedCodeWindow).Handle : 0;
+        UpdateAdvancedPreview(camera, false);
         worldMarkers.Update(gameClient, sameSession, camera, overlay.Handle);
     }
 
@@ -200,7 +223,8 @@ public partial class MainWindow
         var assets = pages.SelectMany(page => page.Xml.Descendants().Where(e => e.Name.LocalName is "POI" or "Trail").Select(e =>
             new OverlayAsset(page.Name, ElementKey(e), Value(e, "DisplayName", Value(e, "name", AssetStem(e))) + InteractionBadge(e), e.Name.LocalName, Value(e, "type"), Value(e, "MapID", "unspecified")))).ToList();
         var targets = pages.SelectMany(page => page.Xml.Descendants("MarkerCategory").Select(c => new OverlayCategory(page.Name, CategoryFullPath(c),
-            Value(c, "isSeparator").Trim() == "1" || Value(c, "isSeparator").Trim().Equals("true", StringComparison.OrdinalIgnoreCase), Value(c, "copy").Length > 0))).ToList();
+            Value(c, "isSeparator").Trim() == "1" || Value(c, "isSeparator").Trim().Equals("true", StringComparison.OrdinalIgnoreCase), Value(c, "copy").Length > 0)
+        { DisplayName = Value(c, "DisplayName", CategoryName(c)), TipDescription = Value(c, "tip-description") })).ToList();
         overlay.SetEditableTrails(editableTrails);
         overlay.SetWorkspace(pages.Select(p => p.Name).ToList(), targets, assets);
         RefreshWorldMarkers();
@@ -212,15 +236,27 @@ public partial class MainWindow
     private List<WorldTrail> previewTrails = [];
     private bool PreviewCategoryVisible(string path) => PreviewCategories.Visible(path, hiddenPreviewCategories);
 
-    private List<WorldMarker> VisiblePreviewMarkers() => previewMarkers.Select(m => PreviewCategoryVisible(m.Category) ? m : m with
+    private List<WorldMarker> VisiblePreviewMarkers()
+    {
+        var selectedKeys = ElementsList.SelectedItems.Cast<ExplorerRow>().Select(r => r.DocumentName + "|" + r.Key).ToHashSet();
+        return previewMarkers.Select(m => PreviewCategoryVisible(m.Category) && AdvancedVisible(m.Key) ? CheckpointMarkerView(m, selectedKeys) : m with
         { Style = m.Style with { WorldVisible = false, MapVisible = false, MinimapVisible = false } }).ToList();
-
-    private List<WorldTrail> VisiblePreviewTrails() => previewTrails.Select(t => PreviewCategoryVisible(t.Category) ? t : t with
-        { WorldVisible = false, MapVisible = false, MinimapVisible = false }).ToList();
+    }
+    private List<WorldTrail> VisiblePreviewTrails() => previewTrails.Select(t =>
+    {
+        bool visible = PreviewCategoryVisible(t.Category) && AdvancedVisible(t.Key);
+        if (checkpointTestActive && checkpointNodes.TryGetValue(t.Key, out var node))
+        {
+            visible &= checkpointTestVisibility.ContainsKey(node.Guid);
+            if (visible) t = t with { Color = FromArgb(AttributeColor.ToArgb(checkpointTestVisibility[node.Guid] == 0 ? node.Color : DimCheckpointColor(node.PreColor, checkpointTestVisibility[node.Guid]))) };
+        }
+        return visible ? t : t with { WorldVisible = false, MapVisible = false, MinimapVisible = false };
+    }).ToList();
 
     private void ApplyPreviewVisibility()
     {
         using var timing = WorkspacePerformance.Measure("QuickMenu.TogglePreview");
+        if (checkpointTestActive) checkpointTestVisibility = checkpointTest.Visible();
         worldMarkers?.SetPreviewScene(VisiblePreviewMarkers(), VisiblePreviewTrails());
     }
 
@@ -234,49 +270,64 @@ public partial class MainWindow
         var dots = new List<WorldMarker>();
         var categoryValues = CategoryValues();
         foreach (var page in pages)
-        foreach (var poi in page.Xml.Descendants("POI"))
-        {
-            string path = Value(poi, "type");
-            string visible = AttributeRules.Effective(poi, "inGameVisibility", "1", categoryValues);
-            if (!uint.TryParse(AttributeRules.Effective(poi, "MapID", "", categoryValues), NumberStyles.None, CultureInfo.InvariantCulture, out uint map)) continue;
-            if (map != worldSceneMap) continue;
-            bool Coordinate(string key, out float value) => float.TryParse(Value(poi, key), NumberStyles.Float, CultureInfo.InvariantCulture, out value) && float.IsFinite(value);
-            if (!Coordinate("xpos", out float x) || !Coordinate("ypos", out float y) || !Coordinate("zpos", out float z)) continue;
-            string E(string name, string fallback) => AttributeRules.Effective(poi, name, fallback, categoryValues);
-            float F(string name, float fallback) => float.TryParse(E(name, fallback.ToString(CultureInfo.InvariantCulture)), NumberStyles.Float, CultureInfo.InvariantCulture, out var n) && float.IsFinite(n) ? n : fallback;
-            uint argb = VisualAttributeMath.Color(E("color", "FFFFFFFF"));
-            Color color = Color.FromArgb((byte)(argb >> 24), (byte)(argb >> 16), (byte)(argb >> 8), (byte)argb);
-            var style = new MarkerStyle(E("iconFile", ""), Math.Max(0, F("iconSize", 1)), F("heightOffset", MarkerPreviewMath.DefaultHeightOffset), F("alpha", 1), F("fadeNear", -1), F("fadeFar", -1), Math.Max(0, F("minSize", 5)), Math.Max(0, F("maxSize", 2048)), color, VisualAttributeMath.Enabled(visible), VisualAttributeMath.Enabled(E("miniMapVisibility", "1")), VisualAttributeMath.Enabled(E("mapVisibility", "1")), F("mapDisplaySize", 20))
+            foreach (var poi in page.Xml.Descendants("POI"))
             {
-                ScaleOnMapWithZoom = VisualAttributeMath.Enabled(E("scaleOnMapWithZoom", "1")),
-                GameScale = preferences.MarkerGameScale, MapScale = preferences.MarkerMapScale, MinimapScale = preferences.MarkerMinimapScale,
-                Rotation = VisualAttributeMath.Rotation(E("rotate", ""), E("rotate-x", ""), E("rotate-y", ""), E("rotate-z", "")),
-                Sticky = VisualAttributeMath.Enabled(E("screenSticky", "false")) ? new StickyStyle(F("stickyDistance", 300), VisualAttributeMath.Enabled(E("stickyHideOriginal", "true")), F("stickyX", 0), F("stickyY", 0), F("stickyScale", 1)) : null
-            };
-            dots.Add(new(page.Name + "|" + ElementKey(poi), Value(poi, "DisplayName", Value(poi, "name", AssetStem(poi))), map, new Vector3(x, y, z), style) { Category = path, InteractionBadge = InteractionBadge(poi) });
-        }
+                string path = Value(poi, "type");
+                string visible = AttributeRules.Effective(poi, "inGameVisibility", "1", categoryValues);
+                if (!uint.TryParse(AttributeRules.Effective(poi, "MapID", "", categoryValues), NumberStyles.None, CultureInfo.InvariantCulture, out uint map)) continue;
+                if (map != worldSceneMap) continue;
+                bool Coordinate(string key, out float value) => float.TryParse(Value(poi, key), NumberStyles.Float, CultureInfo.InvariantCulture, out value) && float.IsFinite(value);
+                if (!Coordinate("xpos", out float x) || !Coordinate("ypos", out float y) || !Coordinate("zpos", out float z)) continue;
+                string E(string name, string fallback) => AttributeRules.Effective(poi, name, fallback, categoryValues);
+                float F(string name, float fallback) => float.TryParse(E(name, fallback.ToString(CultureInfo.InvariantCulture)), NumberStyles.Float, CultureInfo.InvariantCulture, out var n) && float.IsFinite(n) ? n : fallback;
+                uint argb = VisualAttributeMath.Color(E("color", "FFFFFFFF"));
+                Color color = Color.FromArgb((byte)(argb >> 24), (byte)(argb >> 16), (byte)(argb >> 8), (byte)argb);
+                var style = new MarkerStyle(E("iconFile", ""), Math.Max(0, F("iconSize", 1)), F("heightOffset", MarkerPreviewMath.DefaultHeightOffset), F("alpha", 1), F("fadeNear", -1), F("fadeFar", -1), Math.Max(0, F("minSize", 5)), Math.Max(0, F("maxSize", 2048)), color, VisualAttributeMath.Enabled(visible), VisualAttributeMath.Enabled(E("miniMapVisibility", "1")), VisualAttributeMath.Enabled(E("mapVisibility", "1")), F("mapDisplaySize", 20))
+                {
+                    ScaleOnMapWithZoom = VisualAttributeMath.Enabled(E("scaleOnMapWithZoom", "1")),
+                    GameScale = preferences.MarkerGameScale,
+                    MapScale = preferences.MarkerMapScale,
+                    MinimapScale = preferences.MarkerMinimapScale,
+                    CanFade = VisualAttributeMath.Enabled(E("canFade", "true")),
+                    Bounce = new BounceStyle(E("bounce", ""), F("bounce-height", 2), F("bounce-duration", 1), F("bounce-delay", 0), F("triggerRange", 2)),
+                    Rotation = VisualAttributeMath.Rotation(E("rotate", ""), E("rotate-x", ""), E("rotate-y", ""), E("rotate-z", "")),
+                    Sticky = VisualAttributeMath.Enabled(E("screenSticky", "false")) ? new StickyStyle(F("stickyDistance", 300), VisualAttributeMath.Enabled(E("stickyHideOriginal", "true")), F("stickyX", 0), F("stickyY", 0), F("stickyScale", 1)) : null
+                };
+                dots.Add(new(page.Name + "|" + ElementKey(poi), Value(poi, "DisplayName", Value(poi, "name", AssetStem(poi))), map, new Vector3(x, y, z), style) { Ranges = MarkerRanges.Effective(n => E(n, "")), Category = path, InteractionBadge = InteractionBadge(poi), TipTitle = E("tip-name", categoryValues.TryGetValue(path, out var tipCategory) ? Value(tipCategory, "DisplayName", CategoryName(tipCategory)) : ""), TipDescription = E("tip-description", "") });
+            }
         var lines = new List<WorldTrail>();
         foreach (var page in pages)
-        foreach (var e in page.Xml.Descendants("Trail"))
-        {
-            var trail = TrailFor(e) ?? RawTrailFor(e, categoryValues);
-            if (trail == null || trail.MapId != worldSceneMap) continue;
-            string path = Value(e, "type");
-            string E(string n, string f) => AttributeRules.Effective(e, n, f, categoryValues);
-            float F(string n, float f) => float.TryParse(E(n, f.ToString(CultureInfo.InvariantCulture)), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) && float.IsFinite(v) ? v : f;
-            uint argb = VisualAttributeMath.Color(E("color", "FFFFFFFF"));
-            Color tint = Color.FromArgb((byte)(argb >> 24), (byte)(argb >> 16), (byte)(argb >> 8), (byte)argb);
-            lines.Add(new WorldTrail(trail, E("texture", ""), F("trailScale", 1), F("alpha", 1), F("fadeNear", -1), F("fadeFar", -1), F("heightOffset", 0), tint)
+            foreach (var e in page.Xml.Descendants("Trail"))
             {
-                Key = page.Name + "|" + ElementKey(e), Category = path, GameWidth = preferences.TrailGameWidth, MapWidth = preferences.TrailMapWidth, MinimapWidth = preferences.TrailMinimapWidth,
-                ScaleOnMapWithZoom = VisualAttributeMath.Enabled(E("scaleOnMapWithZoom", "1")),
-                AnimSpeed = F("animSpeed", 1), WorldVisible = VisualAttributeMath.Enabled(E("inGameVisibility", "1")),
-                MinimapVisible = VisualAttributeMath.Enabled(E("miniMapVisibility", "1")), MapVisible = VisualAttributeMath.Enabled(E("mapVisibility", "1")), MapSize = F("mapDisplaySize", 20)
-            });
-        }
+                var trail = TrailFor(e) ?? RawTrailFor(e, categoryValues);
+                if (trail == null || trail.MapId != worldSceneMap) continue;
+                string path = Value(e, "type");
+                string E(string n, string f) => AttributeRules.Effective(e, n, f, categoryValues);
+                float F(string n, float f) => float.TryParse(E(n, f.ToString(CultureInfo.InvariantCulture)), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) && float.IsFinite(v) ? v : f;
+                uint argb = VisualAttributeMath.Color(E("color", "FFFFFFFF"));
+                Color tint = Color.FromArgb((byte)(argb >> 24), (byte)(argb >> 16), (byte)(argb >> 8), (byte)argb);
+                lines.Add(new WorldTrail(trail, E("texture", ""), F("trailScale", 1), F("alpha", 1), F("fadeNear", -1), F("fadeFar", -1), F("heightOffset", 0), tint)
+                {
+                    Editable = editableTrails.Contains(trail),
+                    Key = page.Name + "|" + ElementKey(e),
+                    Category = path,
+                    IsWall = VisualAttributeMath.Enabled(E("isWall", "false")),
+                    CanFade = VisualAttributeMath.Enabled(E("canFade", "true")),
+                    GameWidth = preferences.TrailGameWidth,
+                    MapWidth = preferences.TrailMapWidth,
+                    MinimapWidth = preferences.TrailMinimapWidth,
+                    ScaleOnMapWithZoom = VisualAttributeMath.Enabled(E("scaleOnMapWithZoom", "1")),
+                    AnimSpeed = F("animSpeed", 1),
+                    WorldVisible = VisualAttributeMath.Enabled(E("inGameVisibility", "1")),
+                    MinimapVisible = VisualAttributeMath.Enabled(E("miniMapVisibility", "1")),
+                    MapVisible = VisualAttributeMath.Enabled(E("mapVisibility", "1")),
+                    MapSize = F("mapDisplaySize", 20)
+                });
+            }
         foreach (var reference in selectedTrailPoints)
-        if (ResolvePoint(reference) is { } point && editableTrails.FirstOrDefault(t => t.Number == reference.Trail) is { } trail)
-            dots.Add(new(reference.Key, $"Point {point.Id:0000000}", trail.MapId, point.Position, new MarkerStyle("", 1, 0, 1, -1, -1, 5, 10, Color.FromRgb(224, 35, 255), true, false, false, 10), true));
+            if (ResolvePoint(reference) is { } point && editableTrails.FirstOrDefault(t => t.Number == reference.Trail) is { } trail)
+                dots.Add(new(reference.Key, $"Point {point.Id:0000000}", trail.MapId, point.Position, new MarkerStyle("", 1, 0, 1, -1, -1, 5, 10, Color.FromRgb(224, 35, 255), true, false, false, 10), true));
+        BuildCheckpointNodes();
         worldMarkers.ProjectFolder = projectFolder;
         worldMarkers.ApplyVisualPreferences(visualPreviewPreferences ?? preferences);
         previewMarkers = dots.Where(m => !m.IsTrailPoint).ToList();
@@ -335,29 +386,18 @@ public partial class MainWindow
     private void SyncOverlaySelection()
     {
         if (worldMarkers == null) return;
-        worldMarkers.SetNameSelection(ElementsList.SelectedItems.Cast<ExplorerRow>()
-            .Where(r => r.Kind == "POI").Select(r => r.DocumentName + "|" + r.Key));
-        if (selected?.Kind is "point" or "segment")
-        {
-            var handles = new List<WorldMarker>();
-            foreach (var reference in selectedTrailPoints)
-            if (ResolvePoint(reference) is { } point && editableTrails.FirstOrDefault(t => t.Number == reference.Trail) is { } pointTrail)
-                handles.Add(new(reference.Key, $"Point {point.Id:0000000}", pointTrail.MapId, point.Position, new MarkerStyle("", 1, 0, 1, -1, -1, 5, 10, Color.FromRgb(224, 35, 255), true, false, false, 10), true));
-            worldMarkers.SetPointMarkers(handles);
-            worldMarkers.SetSelection(selectedTrailPoints.Select(p => p.Key).ToList());
-            overlay?.SetPointSelection(selectedTrailPoints.ToList());
-            if (selected.Kind == "segment" && TrailFor(selected.Element) is { } segmentTrail && long.TryParse(selected.Key.Split('|').Last(), out long id)) overlay?.SelectSegment(new(segmentTrail.Number, id));
-            return;
-        }
-        selectedTrailPoints.Clear();
-        worldMarkers.SetPointMarkers([]);
-        bool marker = selected?.Element?.Name.LocalName == "POI";
-        worldMarkers.SetSelection(marker ? [selected!.DocumentName + "|" + selected.Key] : []);
-        if (selected?.Element?.Name.LocalName is "POI" or "Trail")
-        {
-            overlay?.SelectAsset(selected.DocumentName, selected.Key);
-            if (selected.Element.Name.LocalName == "Trail" && TrailFor(selected.Element) is { } selectedTrail) ChooseTrail(selectedTrail.Number, null);
-        }
+        var rows = ElementsList.SelectedItems.Cast<ExplorerRow>().ToList();
+        var markerKeys = rows.Where(r => r.Kind == "POI").Select(r => r.RowId).ToList();
+        selectedTrailPoints.Clear(); foreach (var row in rows) if (TrailPointRef.Parse(row.Key) is { } point && ResolvePoint(point) != null) selectedTrailPoints.Add(point);
+        worldMarkers.SetNameSelection(markerKeys); ApplyPreviewVisibility();
+        var handles = new List<WorldMarker>();
+        foreach (var reference in selectedTrailPoints)
+            if (ResolvePoint(reference) is { } point && editableTrails.FirstOrDefault(t => t.Number == reference.Trail) is { } trail)
+                handles.Add(new(reference.Key, $"Point {reference.Point:0000000}", trail.MapId, point.Position, new MarkerStyle("", 1, 0, 1, -1, -1, 5, 10, Color.FromRgb(224, 35, 255), true, false, false, 10), true));
+        worldMarkers.SetPointMarkers(handles); worldMarkers.SetSelection(markerKeys.Concat(selectedTrailPoints.Select(p => p.Key)).ToList());
+        if (selectedTrailPoints.Count > 0) { overlay?.SetPointSelection(selectedTrailPoints.ToList()); return; }
+        if (selected?.Kind == "segment" && TrailFor(selected.Element) is { } selectedTrail && long.TryParse(selected.Key.Split('|').Last(), out long segment)) overlay?.SelectSegment(new(selectedTrail.Number, segment));
+        else if (selected?.Element?.Name.LocalName is "POI" or "Trail") overlay?.SelectAsset(selected.DocumentName, selected.Key);
         else overlay?.ClearAssetSelection();
     }
 
@@ -405,7 +445,7 @@ public partial class MainWindow
                 SelectTrailSegment(new(point.Trail, point.Segment));
                 break;
             case TrailSelectionMode.NearestPoint:
-                SelectTrailPoints([point]);
+                ApplyOverlaySelection([point.Key], false, false);
                 break;
             default:
                 if (source != null) SelectWorldMarker(source.Key);
@@ -436,8 +476,8 @@ public partial class MainWindow
             try
             {
                 foreach (var input in AttributesHost.Children.OfType<TextBox>())
-                if (input.Tag is string name && name is ("xpos" or "ypos" or "zpos"))
-                    input.Text = (name == "xpos" ? position.X : name == "ypos" ? position.Y : position.Z).ToString("R", CultureInfo.InvariantCulture);
+                    if (input.Tag is string name && name is ("xpos" or "ypos" or "zpos"))
+                        input.Text = (name == "xpos" ? position.X : name == "ypos" ? position.Y : position.Z).ToString("R", CultureInfo.InvariantCulture);
             }
             finally
             {

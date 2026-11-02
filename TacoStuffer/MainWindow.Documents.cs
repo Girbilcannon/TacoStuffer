@@ -77,14 +77,15 @@ public partial class MainWindow
         string stem = kind switch { ProjectDocumentKind.Lua => "script", ProjectDocumentKind.Markdown => "README", _ => "notes" };
         bool Exists(string path) => codePages.Any(c => c.Name.Equals(path, StringComparison.OrdinalIgnoreCase))
             || importedAssets.Contains(path, StringComparer.OrdinalIgnoreCase) || File.Exists(Path.Combine(projectFolder, path));
+        string DefaultPath(string name) => ProjectAssetPaths.FilePath(kind == ProjectDocumentKind.Lua ? assetPaths.Scripts : assetPaths.Docs, Path.GetFileName(ProjectDocuments.NewPath(name,kind)));
         string suggested = stem;
-        for (int i = 2; Exists(ProjectDocuments.NewPath(suggested, kind)); i++) suggested = stem + i;
-        var dialog = new DocumentNameWindow(kind, suggested, Exists) { Owner = this };
+        for (int i = 2; Exists(DefaultPath(suggested)); i++) suggested = stem + i;
+        var dialog = new DocumentNameWindow(kind, suggested, Exists, defaultFolder: kind == ProjectDocumentKind.Lua ? assetPaths.Scripts : assetPaths.Docs) { Owner = this };
         if (dialog.ShowDialog() != true) return;
         try
         {
             // Folders are created lazily for the first document, never at project setup.
-            Directory.CreateDirectory(Path.Combine(projectFolder, Path.GetDirectoryName(dialog.DocumentPath)!));
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(projectFolder,dialog.DocumentPath))!);
             RegisterCode(new ProjectCode(dialog.DocumentPath, ProjectDocuments.InitialContent(kind), true));
             if (kind == ProjectDocumentKind.Lua) importedAssets.Add(dialog.DocumentPath);
             var page = codePages[^1];
@@ -100,9 +101,9 @@ public partial class MainWindow
 internal sealed class DocumentNameWindow : PreviewDialog
 {
     public string DocumentPath { get; private set; } = "";
-    public DocumentNameWindow(ProjectDocumentKind kind, string suggested, Func<string, bool> exists, string? originalPath = null) : base((originalPath == null ? "New " : "Rename ") + kind + " document", 480)
+    public DocumentNameWindow(ProjectDocumentKind kind, string suggested, Func<string, bool> exists, string? originalPath = null, string? defaultFolder = null) : base((originalPath == null ? "New " : "Rename ") + kind + " document", 480)
     {
-        Label("Filename (stored in " + (originalPath == null ? kind == ProjectDocumentKind.Lua ? "scripts/" : "DOCS/" : Path.GetDirectoryName(originalPath) ?? "project root") + ")");
+        Label("Filename (stored in " + (originalPath == null ? defaultFolder ?? (kind == ProjectDocumentKind.Lua ? "scripts/" : "DOCS/") : Path.GetDirectoryName(originalPath) ?? "project root") + ")");
         var input = Input(suggested);
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 10, 0, 0) };
         Body.Children.Add(status);
@@ -111,6 +112,7 @@ internal sealed class DocumentNameWindow : PreviewDialog
             try
             {
                 string path = originalPath == null ? ProjectDocuments.NewPath(input.Text, kind) : ProjectDocuments.RenamePath(originalPath, input.Text);
+                if (originalPath == null && defaultFolder != null) path = ProjectAssetPaths.FilePath(defaultFolder,Path.GetFileName(path));
                 if (exists(path)) { status.Text = "A file with that name already exists. Choose another name."; return; }
                 DocumentPath = path;
                 DialogResult = true;

@@ -1,0 +1,30 @@
+name: Publish Taco Stuffer documentation
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'DOCUMENTATION/**'
+      - '.github/workflows/documentation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: DOCUMENTATION
+      - name: Deploy documentation
+        id: deployment
+        uses: actions/deploy-pages@v4

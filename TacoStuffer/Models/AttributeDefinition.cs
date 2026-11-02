@@ -125,8 +125,101 @@ public sealed class AttributeCatalog
         <AttributeGroup version="1" key="copy" displayName="Copy" appliesTo="POI,MarkerCategory">
           <Attribute name="copy" default="" type="multiline" optional="false" />
           <Attribute name="copy-message" default="'{0}' copied to clipboard." type="multiline" optional="true" />
-          <Attribute name="triggerRange" default="2" type="number" optional="true" />
+        </AttributeGroup>
+        """),
+        ("trigger.xml", """
+        <AttributeGroup version="1" key="trigger" displayName="Trigger" appliesTo="POI,MarkerCategory">
+          <Attribute name="triggerRange" default="2" type="number" optional="false" />
           <Attribute name="autoTrigger" default="false" type="bool" optional="true" />
+        </AttributeGroup>
+        """),
+        ("showHide.xml", """
+        <AttributeGroup version="1" key="showHide" displayName="Show / Hide" appliesTo="POI,MarkerCategory">
+          <Attribute name="show" default="" type="category" optional="false" />
+          <Attribute name="hide" default="" type="category" optional="true" />
+        </AttributeGroup>
+        """),
+        ("toggle.xml", """
+        <AttributeGroup version="1" key="toggle" displayName="Toggle" appliesTo="POI,MarkerCategory">
+          <Attribute name="toggle" default="" type="category" optional="false" />
+          <Attribute name="toggleCategory" default="" type="category" optional="true" />
+        </AttributeGroup>
+        """),
+        ("defaultToggle.xml", """
+        <AttributeGroup version="1" key="defaultToggle" displayName="Toggle (Category Default)" appliesTo="MarkerCategory">
+          <Attribute name="defaultToggle" default="true" type="bool" optional="false" />
+        </AttributeGroup>
+        """),
+        ("tip.xml", """
+        <AttributeGroup version="1" key="tip" displayName="Tip" appliesTo="POI,MarkerCategory">
+          <Attribute name="tip-name" default="" type="multiline" optional="false" />
+          <Attribute name="tip-description" default="" type="multiline" optional="true" />
+        </AttributeGroup>
+        """),
+        ("mount.xml", """
+        <AttributeGroup version="1" key="mount" displayName="Mount" appliesTo="POI,Trail,MarkerCategory">
+          <Attribute name="mount" default="raptor" type="mounts" optional="false" />
+        </AttributeGroup>
+        """),
+        ("isWall.xml", """
+        <AttributeGroup version="1" key="isWall" displayName="Wall (Trails)" appliesTo="Trail,MarkerCategory">
+          <Attribute name="isWall" default="false" type="bool" optional="false" />
+        </AttributeGroup>
+        """),
+        ("isHidden.xml", """
+        <AttributeGroup version="1" key="isHidden" displayName="Hidden Category" appliesTo="MarkerCategory">
+          <Attribute name="isHidden" default="false" type="bool" optional="false" />
+        </AttributeGroup>
+        """),
+        ("bounce.xml", """
+        <AttributeGroup version="1" key="bounce" displayName="Bounce" appliesTo="POI,MarkerCategory">
+          <Attribute name="bounce" default="bounce" type="bounce" optional="false" />
+          <Attribute name="bounce-height" default="2" type="number" optional="true" />
+          <Attribute name="bounce-duration" default="1" type="number" optional="true" />
+          <Attribute name="bounce-delay" default="0" type="number" optional="true" />
+        </AttributeGroup>
+        """),
+        ("behavior.xml", """
+        <AttributeGroup version="1" key="behavior" displayName="Behavior" appliesTo="POI,MarkerCategory">
+          <Attribute name="behavior" default="0" type="behavior" optional="false" />
+          <Attribute name="invertBehavior" default="false" type="bool" optional="true" />
+          <Attribute name="resetLength" default="0" type="number" optional="true" />
+        </AttributeGroup>
+        """),
+        ("canFade.xml", """
+        <AttributeGroup version="1" key="canFade" displayName="Can Fade" appliesTo="POI,Trail,MarkerCategory">
+          <Attribute name="canFade" default="true" type="bool" optional="false" />
+        </AttributeGroup>
+        """),
+        ("cpFinish.xml", """
+        <AttributeGroup version="1" key="cpFinish" displayName="Checkpoint Finish Line" appliesTo="POI,Trail,MarkerCategory">
+          <Attribute name="cpFinish" default="true" type="bool" optional="false" />
+        </AttributeGroup>
+        """),
+        ("checkpoint.xml", """
+        <AttributeGroup version="1" key="checkpoint" displayName="Checkpoint (Taquito Only)" appliesTo="POI,MarkerCategory">
+          <Attribute name="isCheckpoint" default="true" type="bool" optional="false" />
+          <Attribute name="cpColor" default="FFFFFFFF" type="rgba" optional="false" />
+          <Attribute name="cpPreColor" default="FFFFFFFF" type="rgba" optional="false" />
+          <Attribute name="nextCheckCount" default="2" type="integer" optional="false" />
+          <Attribute name="nextCheck" default="" type="guid-list" optional="false" />
+          <Attribute name="cpRadius" default="2" type="number" optional="false" />
+          <Attribute name="cpReset" default="" type="guid-single" optional="true" />
+        </AttributeGroup>
+        """),
+        ("resetguid.xml", """
+        <AttributeGroup version="1" key="resetguid" displayName="Reset GUID" appliesTo="POI,MarkerCategory">
+          <Attribute name="resetguid" default="" type="guid-list" optional="false" />
+          <Attribute name="resetMessage" default="Race reset." type="multiline" optional="true" />
+        </AttributeGroup>
+        """),
+        ("script.xml", """
+        <AttributeGroup version="1" key="script" displayName="Script (Authoring Only)" appliesTo="POI,Trail,MarkerCategory">
+          <Attribute name="script-trigger" default="" type="script" optional="false" />
+          <Attribute name="script-focus" default="" type="script" optional="true" />
+          <Attribute name="script-tick" default="" type="script" optional="true" />
+          <Attribute name="script-filter" default="" type="script" optional="true" />
+          <Attribute name="script-once" default="" type="script" optional="true" />
         </AttributeGroup>
         """),
     ];

@@ -1,0 +1,4 @@
+<AttributeGroup version="1" key="toggle" displayName="Toggle" appliesTo="POI,MarkerCategory">
+  <Attribute name="toggle" default="" type="category" optional="false" />
+  <Attribute name="toggleCategory" default="" type="category" optional="true" />
+</AttributeGroup>

@@ -14,14 +14,14 @@ public partial class MainWindow
             Notice("No project", "Create or open a project first.");
             return;
         }
-        var dialog = new ProjectSettingsWindow(projectFolder, assetPaths, tacoOutputFolder, includeDocumentation) { Owner = this };
+        var dialog = new ProjectSettingsWindow(projectFolder, assetPaths, tacoOutputFolder, includeDocumentation, () => BrowseAssets(true, false), () => assetPaths, alternateOutputs) { Owner = this };
         if (dialog.ShowDialog() != true) return;
         try
         {
             _ = ProjectStore.ExportPath(projectFile, CurrentSnapshot() with { AssetPaths = dialog.Paths, OutputFolder = dialog.OutputFolder });
-            foreach (string path in new[] { dialog.Paths.MarkerIcons, dialog.Paths.TrailTextures, dialog.Paths.TrailFiles }) Directory.CreateDirectory(Path.Combine(projectFolder, path));
-            assetPaths = dialog.Paths;
+            assetPaths = AssetFolders.ExistingDefaults(projectFolder, dialog.Paths);
             tacoOutputFolder = dialog.OutputFolder;
+            alternateOutputs = dialog.AlternateOutputs;
             includeDocumentation = dialog.IncludeDocumentation;
             if (selected?.Element != null) ShowAttributes();
             StatusText.Text = "Project folders updated. Save the project to retain them; future builds use the selected .taco output folder.";

@@ -3,6 +3,7 @@ using System.Xml.Linq;
 namespace TacoStuffer.Models;
 
 public sealed record PackSelection(int Document, int Element);
+public sealed record AssetDropIdentity(int OldDocument,string OldKey,int NewDocument,string NewKey);
 
 public static class PackEditing
 {
@@ -65,6 +66,42 @@ public static class PackEditing
             if (node is XElement child && child.Name == "MarkerCategory") MergeCategory(existing, child);
             else existing.Add(node);
         }
+    }
+
+    public static List<XDocument> DropAssets(IReadOnlyList<XDocument> originals,IEnumerable<PackSelection> selection,PackSelection target,CategoryDropPosition position)
+        => DropAssets(originals,selection,target,position,out _);
+
+    public static List<XDocument> DropAssets(IReadOnlyList<XDocument> originals,IEnumerable<PackSelection> selection,PackSelection target,CategoryDropPosition position,out IReadOnlyList<AssetDropIdentity> identities)
+    {
+        var docs = originals.Select(d => new XDocument(d)).ToList();
+        var previous = docs.SelectMany((d,index) => d.Descendants().Where(e => e.Name.LocalName is "MarkerCategory" or "POI" or "Trail").Select(e => (Document:index,Key:ElementIdentity.Key(e),Element:e))).ToList();
+        var moving = Resolve(docs,selection).Select(r => r.Element).ToList();
+        var anchor = docs[target.Document].Descendants().ElementAt(target.Element);
+        if (moving.Count == 0 || moving.Any(e => e.Name.LocalName is not ("POI" or "Trail"))) throw new InvalidOperationException("Only markers and trails can be dropped here.");
+        if (moving.Contains(anchor)) throw new InvalidOperationException("Drop outside the dragged selection.");
+        string category;
+        if (anchor.Name == "MarkerCategory")
+        {
+            category = CategoryOperations.PathOf(anchor);
+            if (position != CategoryDropPosition.Child) category = category.Contains('.') ? category[..category.LastIndexOf('.')] : "";
+            if (category.Length == 0) throw new InvalidOperationException("Drop inside the pack heading; assets must belong to a category.");
+        }
+        else if (anchor.Name.LocalName is "POI" or "Trail" && position != CategoryDropPosition.Child) category = Type(anchor);
+        else throw new InvalidOperationException("Markers and trails cannot contain children.");
+        var templates = Templates(docs);
+        if (category.Length > 0) Ensure(docs[target.Document],category,templates);
+        var pois = docs[target.Document].Root!.Element("POIs");
+        if (pois == null) { pois = new XElement("POIs"); docs[target.Document].Root!.Add(pois); }
+        foreach (var item in moving) { item.Remove(); item.SetAttributeValue("type",category); }
+        if (anchor.Name.LocalName is "POI" or "Trail")
+        {
+            if (position == CategoryDropPosition.Before) anchor.AddBeforeSelf(moving);
+            else anchor.AddAfterSelf(moving);
+        }
+        else pois.Add(moving);
+        var documentIndexes = docs.Select((d,index) => (d,index)).ToDictionary(p => p.d,p => p.index);
+        identities = previous.Select(p => new AssetDropIdentity(p.Document,p.Key,documentIndexes[p.Element.Document!],ElementIdentity.Key(p.Element))).ToList();
+        return docs;
     }
 
     public static List<XDocument> Move(IReadOnlyList<XDocument> originals, IEnumerable<PackSelection> selection, string operation, string destination, int destinationDocument = -1)

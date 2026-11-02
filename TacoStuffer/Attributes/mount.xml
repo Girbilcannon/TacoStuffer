@@ -1,0 +1,3 @@
+<AttributeGroup version="1" key="mount" displayName="Mount" appliesTo="POI,Trail,MarkerCategory">
+  <Attribute name="mount" default="raptor" type="mounts" optional="false" />
+</AttributeGroup>

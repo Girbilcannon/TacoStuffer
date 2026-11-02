@@ -1,0 +1,5 @@
+<AttributeGroup version="1" key="behavior" displayName="Behavior" appliesTo="POI,MarkerCategory">
+  <Attribute name="behavior" default="0" type="behavior" optional="false" />
+  <Attribute name="invertBehavior" default="false" type="bool" optional="true" />
+  <Attribute name="resetLength" default="0" type="number" optional="true" />
+</AttributeGroup>

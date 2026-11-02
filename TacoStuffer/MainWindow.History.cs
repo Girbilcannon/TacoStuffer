@@ -21,7 +21,7 @@ public partial class MainWindow
         return new(pages.Select(p => new HistoryXml(p.Name, p.FormattedXml, PageSource(p),
             TabOwner(p.Tab) != null || detachedTabs.ContainsKey(p.Tab))).ToList(),
             editableTrails.Select(t => recordingHistorySource != null && t.Number == recordingHistoryTrail ? recordingHistorySource : EditableTrails.Serialize(t)).ToList(),
-            categoryOrder.ToList(), new(textureLabels, StringComparer.OrdinalIgnoreCase), nextMarkerNumber, nextTrailNumber);
+            categoryOrder.ToList(), new(textureLabels, StringComparer.OrdinalIgnoreCase), nextMarkerNumber, nextTrailNumber,outlinerOrder.ToList());
     }
 
     private static string HistorySource(RichTextBox editor)
@@ -143,6 +143,7 @@ public partial class MainWindow
 
     private void RestoreHistory(EditorState state)
     {
+        pendingCheckpointResets.Clear();
         restoringHistory = true;
         updating = true;
         xmlTimer.Stop();
@@ -198,6 +199,7 @@ public partial class MainWindow
             nextMarkerNumber = state.NextMarker;
             nextTrailNumber = state.NextTrail;
             categoryOrder = state.CategoryOrder.ToList();
+            outlinerOrder = state.OutlinerOrder?.ToList() ?? [];
             textureLabels.Clear();
             foreach (var pair in state.TextureLabels) textureLabels[pair.Key] = pair.Value;
             pointLookups.Clear();

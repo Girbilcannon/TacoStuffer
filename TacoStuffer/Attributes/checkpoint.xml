@@ -1,0 +1,9 @@
+<AttributeGroup version="1" key="checkpoint" displayName="Checkpoint (Taquito Only)" appliesTo="POI,MarkerCategory">
+  <Attribute name="isCheckpoint" default="true" type="bool" optional="false" />
+  <Attribute name="cpColor" default="FFFFFFFF" type="rgba" optional="false" />
+  <Attribute name="cpPreColor" default="FFFFFFFF" type="rgba" optional="false" />
+  <Attribute name="nextCheckCount" default="2" type="integer" optional="false" />
+  <Attribute name="nextCheck" default="" type="guid-list" optional="false" />
+  <Attribute name="cpRadius" default="2" type="number" optional="false" />
+  <Attribute name="cpReset" default="" type="guid-single" optional="true" />
+</AttributeGroup>

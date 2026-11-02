@@ -113,16 +113,23 @@ public static class TacoImporter
                 var xml = Xml(entry.Value);
                 if (xml.Root?.Name.LocalName == "OverlayData")
                 {
+                    XNamespace packNamespace = xml.Root.Name.Namespace;
                     foreach (var e in xml.Root.DescendantsAndSelf())
+                    if (e.Name.Namespace == packNamespace || e.Name.Namespace == XNamespace.None)
                     foreach (string canonical in new[] { "OverlayData", "MarkerCategory", "POIs", "POI", "Trail" })
                     if (e.Name.LocalName.Equals(canonical, StringComparison.OrdinalIgnoreCase))
                     {
                         e.Name = canonical;
+                        // Canonical pathing elements are unqualified in the editor.
+                        // A retained default xmlns would conflict with that name on
+                        // serialization. Preserve prefixed bindings and extensions.
+                        foreach (var declaration in e.Attributes().Where(a => a.IsNamespaceDeclaration && a.Name.LocalName == "xmlns").ToList())
+                            declaration.Remove();
                         break;
                     }
                     foreach (var attribute in xml.Descendants().Attributes().ToList())
                     foreach (string canonical in new[] { "GUID", "MapID", "DisplayName", "type", "trailData", "iconFile", "texture", "xpos", "ypos", "zpos" })
-                    if (attribute.Name.LocalName.Equals(canonical, StringComparison.OrdinalIgnoreCase) && attribute.Name.LocalName != canonical)
+                    if (attribute.Parent?.Name.Namespace == XNamespace.None && attribute.Name.Namespace == XNamespace.None && attribute.Name.LocalName.Equals(canonical, StringComparison.OrdinalIgnoreCase) && attribute.Name.LocalName != canonical)
                     {
                         if (attribute.Parent!.Attribute(canonical) != null) throw new InvalidOperationException("Duplicate attribute with differing case: " + canonical);
                         var parent = attribute.Parent!;

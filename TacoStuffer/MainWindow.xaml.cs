@@ -103,6 +103,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        InitializeWorkAreaBounds();
         UpdateBuildStatus();
         PreviewKeyDown += ProjectShortcut;
         updating = true;
@@ -203,6 +204,8 @@ public partial class MainWindow : Window
         {
             visualPreviewPreferences = preview;
             worldMarkers?.ApplyVisualPreferences(preview);
+            overlay?.SetMinimizeGlow(preview.EnableOverlayMinimizeGlow);
+            RefreshAttributeAlerts();
         };
         try
         {
@@ -222,6 +225,8 @@ public partial class MainWindow : Window
         {
             visualPreviewPreferences = null;
             worldMarkers?.ApplyVisualPreferences(preferences);
+            overlay?.SetMinimizeGlow(preferences.EnableOverlayMinimizeGlow);
+            RefreshAttributeAlerts();
         }
     }
 
@@ -355,6 +360,7 @@ public partial class MainWindow : Window
         string? focusedKey = selected == null ? null : selected.DocumentName + "|" + selected.Key;
         var keys = ElementsList.SelectedItems.Cast<ExplorerRow>().Select(r => r.DocumentName + "|" + r.Key).ToHashSet();
         if (selected != null) keys.Add(selected.DocumentName + "|" + selected.Key);
+        outlinerRanks = outlinerOrder.Select((id,index) => (id,index)).GroupBy(p => p.id).ToDictionary(g => g.Key,g => g.First().index);
         var rows = new List<ExplorerRow>();
         if (projectFile != null) rows.Add(new(ProjectTitle.Text, "", null, 0, "project", "project"));
         var orderedPages = pages.Where(p => ViewOpen(p.Tab)).Concat(pages.Where(p => !ViewOpen(p.Tab))).ToList();
@@ -415,13 +421,14 @@ public partial class MainWindow : Window
     {
         string path = CategoryFullPath(category);
         rows.Add(new("▾ ▱ " + Value(category, "DisplayName", CategoryName(category)), page.Name, category, depth, "MarkerCategory", ElementKey(category)));
-        foreach (var e in objects[path])
+        var children = objects[path].Concat(category.Elements("MarkerCategory"));
+        foreach (var e in children.OrderBy(e => outlinerRanks.GetValueOrDefault(page.Name + "|" + ElementKey(e),int.MaxValue)))
         {
-            string label = (e.Name.LocalName == "Trail" ? "↝ " : "◆ ") + Value(e, "DisplayName", Value(e, "name", AssetStem(e))) + InteractionBadge(e);
-            rows.Add(new(label, page.Name, e, depth + 1, e.Name.LocalName, ElementKey(e)));
-            if (e.Name.LocalName == "Trail") AddTrailRows(page, e, depth + 2, rows);
+            if (e.Name == "MarkerCategory") { AddCategoryRows(page,e,depth+1,rows,objects); continue; }
+            string label = (e.Name.LocalName == "Trail" ? "↝ " : "◆ ") + Value(e,"DisplayName",Value(e,"name",AssetStem(e))) + InteractionBadge(e);
+            rows.Add(new(label,page.Name,e,depth+1,e.Name.LocalName,ElementKey(e)));
+            if (e.Name.LocalName == "Trail") AddTrailRows(page,e,depth+2,rows);
         }
-        foreach (var child in category.Elements("MarkerCategory")) AddCategoryRows(page, child, depth + 1, rows, objects);
     }
 
     private void AddTrailRows(XmlPage page, XElement element, int depth, List<ExplorerRow> rows)
@@ -475,8 +482,9 @@ public partial class MainWindow : Window
         CategoryTree.Items.Clear();
         quickMenuNodes.Clear();
         quickMenuRows = Categories().ToDictionary(p => p.Key, p => p.Value);
+        InitializePreviewCategories();
         var orderIndex = categoryOrder.Select((path, index) => (path, index)).ToDictionary(p => p.path, p => p.index);
-        var ordered = quickMenuRows.Keys.OrderBy(p => orderIndex.GetValueOrDefault(p, int.MaxValue)).ToList();
+        var ordered = quickMenuRows.Keys.Where(path => !CategoryMenuHidden(path)).OrderBy(p => orderIndex.GetValueOrDefault(p, int.MaxValue)).ToList();
         string? ParentPath(string path)
         {
             int dot = path.LastIndexOf('.');
@@ -503,10 +511,12 @@ public partial class MainWindow : Window
                 {
                     if (check.IsChecked == true) hiddenPreviewCategories.Remove(path);
                     else hiddenPreviewCategories.Add(path);
+                    SaveCategoryPreview(path, check.IsChecked == true);
                     ApplyPreviewVisibility();
                 };
                 header = check;
             }
+            header.ToolTip = Value(row.Element!, "tip-description", path);
             var node = new TreeViewItem { Header = header, Tag = row, IsExpanded = false, Padding = new Thickness(4, 1, 4, 1), HorizontalContentAlignment = HorizontalAlignment.Stretch };
             quickMenuNodes[path] = node;
             AddCategoryContext(node, row);
@@ -627,7 +637,7 @@ public partial class MainWindow : Window
     {
         if (editor.Tag is XmlRunIndex indexed && indexed.Elements.TryGetValue(ElementKey(element), out var exact))
         {
-            editor.Selection.Select(exact.ContentStart, exact.ContentEnd);
+            Views.WorkingLineAdorner.Show(editor, exact.ContentStart, true);
             return;
         }
         string value = element.Name.LocalName == "MarkerCategory" ? CategoryName(element) : Value(element, "GUID");
@@ -636,7 +646,7 @@ public partial class MainWindow : Window
         if (editor.Tag is XmlRunIndex index && index.Tokens.TryGetValue(token, out var matches) && matches.Count > 0)
         {
             var run = matches[0];
-            editor.Selection.Select(run.ContentStart, run.ContentEnd);
+            Views.WorkingLineAdorner.Show(editor, run.ContentStart, true);
             return;
         }
         // The token index is discarded after typing; use the normal text walk
@@ -649,7 +659,7 @@ public partial class MainWindow : Window
             if (offset < 0) continue;
             var first = p.GetPositionAtOffset(offset);
             var last = first?.GetPositionAtOffset(token.Length);
-            if (first != null && last != null) editor.Selection.Select(first, last);
+            if (first != null) Views.WorkingLineAdorner.Show(editor, first, true);
             break;
         }
     }
@@ -664,6 +674,8 @@ public partial class MainWindow : Window
     private void ShowAttributes()
     {
         interactionRangeStatus = null;
+        attributeAlertUpdates.Clear();
+        resetMessageControlsAdded = false;
         using var timing = TacoStuffer.Services.WorkspacePerformance.Measure("Attributes.Build");
         if (selected?.Kind == "segment")
         {
@@ -682,10 +694,11 @@ public partial class MainWindow : Window
         bool category = selected.Kind == "MarkerCategory";
         SelectionTitle.Text = category ? Value(element, "DisplayName", CategoryName(element)) : selected.Label.TrimStart('◆', '↝', ' ');
         CategoryPath.Text = category ? CategoryFullPath(element) : Value(element, "type");
+        ShowInheritedAttributes(element);
         if (ElementsList.SelectedItems.Count > 1)
         {
             Section($"{ElementsList.SelectedItems.Count} ITEMS SELECTED");
-            AttributesHost.Children.Add(new TextBlock { Text = "Add Attributes and non-identity value edits apply to every selected object. Values below show the focused object; name, GUID and type edits affect only it.", TextWrapping = TextWrapping.Wrap, Foreground = (Brush)FindResource("MutedBrush") });
+            AttributesHost.Children.Add(new TextBlock { Text = "Values show the focused object. Marker/trail name and DisplayName edits number selected assets from top to bottom in the Outliner. GUID and type edits affect only the focused object; other edits apply to the selection.", TextWrapping = TextWrapping.Wrap, Foreground = (Brush)FindResource("MutedBrush") });
         }
         if (element.Name.LocalName is "POI" or "Trail")
             AttributesHost.Children.Add(new TextBlock { Text = "Position: Mumble/TacO meters · Y is vertical; X/Z are horizontal.", TextWrapping = TextWrapping.Wrap, Foreground = (Brush)FindResource("MutedBrush"), Margin = new Thickness(0, 4, 0, 8) });
@@ -707,67 +720,38 @@ public partial class MainWindow : Window
         }
         else
         {
-            Field("name", Value(element, "name", AssetStem(element)), v => ChangeAttribute("name", v));
-            Field("DisplayName", Value(element, "DisplayName", Value(element, "name", AssetStem(element))), v => ChangeAttribute("DisplayName", v));
+            Field("name", Value(element, "name", AssetStem(element)), v => ChangeAssetName("name", v), batchName: AttributeTargets().Count > 1);
+            Field("DisplayName", Value(element, "DisplayName", Value(element, "name", AssetStem(element))), v => ChangeAssetName("DisplayName", v), batchName: AttributeTargets().Count > 1);
+            if (element.Name.LocalName == "Trail") Field("trailData", EffectiveValue(element, "trailData", ""), v => ChangeAttribute("trailData", v));
             foreach (string a in new[] { "MapID", "GUID", "type" }) if (element.Attribute(a) != null) Field(a, Value(element, a), v => ChangeAttribute(a, v));
         }
         var consumed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "name", "DisplayName", "MapID", "GUID", "type" };
+        if (element.Name.LocalName == "Trail") consumed.Add("trailData");
         foreach (var definition in catalog.Groups)
         {
-            if (!definition.Applies(element) || !definition.Members.Any(m => EffectiveValue(element, m.Name, "\0") != "\0")) continue;
-            Section(definition.DisplayName.ToUpperInvariant() + (definition.IsCustom ? " · CUSTOM" : ""));
-            foreach (var member in definition.Members)
+            if (!definition.Applies(element)) continue;
+            foreach (var member in definition.Members) consumed.Add(member.Name);
+            if (!AttributePaneRules.HasLocalGroup(element, definition)) continue;
+            if (definition.Key == "checkpoint") { ShowCheckpointAttributes(element, definition); continue; }
+            var localMembers = definition.Members.Where(m => AttributePaneRules.HasLocal(element, m.Name)).ToList();
+            if (AttributePickerOptions.CanSplit(definition) && !AttributePickerOptions.HasCompleteBundle(element, definition))
             {
-                consumed.Add(member.Name);
-                bool present = element.Attributes().Any(a => a.Name.LocalName.Equals(member.Name, StringComparison.OrdinalIgnoreCase));
-                if (member.Optional)
-                {
-                    string inherited = EffectiveValue(element, member.Name, "\0");
-                    bool interactionField = definition.Key is "info" or "copy";
-                    var enabled = new CheckBox { Content = interactionField ? "Override / enable " + InteractionFieldLabel(member.Name) : "Enable " + member.Name, IsChecked = present };
-                    enabled.Click += (_, _) => ChangeAttribute(member.Name, enabled.IsChecked == true ? (interactionField && inherited != "\0" ? inherited : InteractionFieldDefault(element, member.Name, member.DefaultValue)) : null);
-                    AttributesHost.Children.Add(enabled);
-                    if (!present)
-                    {
-                        if (interactionField && inherited != "\0") AttributesHost.Children.Add(new TextBlock { Text = "Inherited: " + inherited, TextWrapping = TextWrapping.Wrap, Foreground = (Brush)FindResource("MutedBrush") });
-                        else if (interactionField) AttributesHost.Children.Add(new TextBlock { Text = "Fallback: " + InteractionFieldDefault(element, member.Name, member.DefaultValue), Foreground = (Brush)FindResource("MutedBrush") });
-                        continue;
-                    }
-                }
-                if (member.Type == "bool")
-                {
-                    string effective = EffectiveValue(element, member.Name, member.DefaultValue);
-                    var check = new CheckBox { Content = InteractionFieldLabel(member.Name), IsChecked = effective.Trim() == "1" || effective.Trim().Equals("true", StringComparison.OrdinalIgnoreCase) };
-                    check.Click += (_, _) => ChangeAttribute(member.Name, check.IsChecked == true ? "1" : "0");
-                    AttributesHost.Children.Add(check);
-                }
-                else if (present && (member.Name is "iconFile" or "texture")) AssetField(member.Name, Value(element, member.Name));
-                else if (present) Field(member.Name, Value(element, member.Name), v => ChangeAttribute(member.Name, v));
-                else if (EffectiveValue(element, member.Name, "\0") != "\0") AttributesHost.Children.Add(new TextBlock { Text = member.Name + " · inherited: " + EffectiveValue(element, member.Name, ""), Foreground = (Brush)FindResource("MutedBrush"), Margin = new Thickness(0, 5, 0, 5) });
-                else AttributesHost.Children.Add(new TextBlock { Text = "⚠ Missing required: " + member.Name, Foreground = (Brush)FindResource("TortillaBrush"), Margin = new Thickness(0, 5, 0, 5) });
+                foreach (var member in localMembers) ShowIndependentAttribute(element, definition, member);
+                if (localMembers.Any(m => m.Name is "info" or "copy")) AddInteractionActions(element, definition.Key);
+                if (definition.Key == "script") AddAdvancedActions(element, definition.Key);
+                continue;
             }
+            AttributeSection(element, definition);
+            foreach (var member in definition.Members.Where(m => m.Name != "resetMessage" && AttributePaneRules.HasLocal(element, m.Name)))
+                ShowLocalAttribute(element, member);
+            AddAttributeOption(element, definition);
             AddInteractionActions(element, definition.Key);
-            if (definition.Members.Any(m => !m.Optional && EffectiveValue(element, m.Name, "\0") == "\0"))
-            {
-                var required = new Button { Content = "Add missing required controls", Margin = new Thickness(0, 8, 0, 4) };
-                required.Click += (_, _) => AddMissingControls(definition);
-                AttributesHost.Children.Add(required);
-            }
-            bool localGroup = definition.Members.Any(m => element.Attributes().Any(a => a.Name.LocalName.Equals(m.Name, StringComparison.OrdinalIgnoreCase)));
-            var remove = new Button { Content = localGroup ? "Remove local " + definition.DisplayName : "Override inherited " + definition.DisplayName, Margin = new Thickness(0, 8, 0, 4) };
+            AddAdvancedActions(element, definition.Key);
+            var remove = new Button { Content = "Remove " + definition.DisplayName, Margin = new Thickness(0, 8, 0, 4) };
             remove.Click += (_, _) =>
             {
                 if (!TrySyncXml() || selected?.Element == null) return;
-                var values = new Dictionary<string, string?>();
-                foreach (var member in definition.Members)
-                {
-                    if (localGroup) values[member.Name] = null;
-                    else
-                    {
-                        string inherited = EffectiveValue(selected.Element, member.Name, "\0");
-                        if (inherited != "\0") values[member.Name] = inherited;
-                    }
-                }
+                var values = definition.Members.Where(m => m.Name != "resetMessage" || string.IsNullOrEmpty(EffectiveValue(selected.Element, "cpReset", ""))).ToDictionary(m => m.Name, _ => (string?)null, StringComparer.OrdinalIgnoreCase);
                 ApplyAttributeValues(AttributeTargets(), values);
             };
             AttributesHost.Children.Add(remove);
@@ -788,12 +772,12 @@ public partial class MainWindow : Window
         if (standard.Count != 0)
         {
             Section("OTHER STANDARD ATTRIBUTES");
-            foreach (var a in standard) Field(a.Name.LocalName, a.Value, v => ChangeAttribute(a.Name.LocalName, v));
+            foreach (var a in standard) if (!ColorAttributeField(element, new AttributeMember(a.Name.LocalName, a.Value, "string", false))) Field(a.Name.LocalName, a.Value, v => ChangeAttribute(a.Name.LocalName, v));
         }
         if (unknown.Count != 0)
         {
             Section("CUSTOM ATTRIBUTES");
-            foreach (var a in unknown) Field(a.Name.LocalName, a.Value, v => ChangeAttribute(a.Name.LocalName, v));
+            foreach (var a in unknown) if (!ColorAttributeField(element, new AttributeMember(a.Name.LocalName, a.Value, "string", false))) Field(a.Name.LocalName, a.Value, v => ChangeAttribute(a.Name.LocalName, v));
             var export = new Button { Content = "Export Custom Attributes…", Margin = new Thickness(0, 12, 0, 0) };
             export.Click += (_, _) => ExportCustom(unknown);
             AttributesHost.Children.Add(export);
@@ -811,6 +795,7 @@ public partial class MainWindow : Window
     private void ChangeAttribute(string name, string? value)
     {
         if (!TrySyncXml() || selected?.Element == null) return;
+        if (name.Equals("isCheckpoint", StringComparison.OrdinalIgnoreCase) && value != null) { SetCheckpointEnabled(VisualAttributeMath.Enabled(value)); return; }
         var targets = name.ToLowerInvariant() is "name" or "guid" or "type" ? new List<XElement> { selected.Element } : AttributeTargets();
         ApplyAttributeValues(targets, new Dictionary<string, string?> { [name] = value });
     }
@@ -869,18 +854,59 @@ public partial class MainWindow : Window
 
     private void Section(string text) => AttributesHost.Children.Add(new TextBlock { Text = text, Style = (Style)FindResource("SectionTitle") });
 
-    private void Field(string name, string value, Action<string> change)
+    private void Field(string name, string value, Action<string> change, bool batchName = false)
     {
         AttributesHost.Children.Add(new TextBlock { Text = InteractionFieldLabel(name), Foreground = (Brush)FindResource("MutedBrush"), Margin = new Thickness(0, 6, 0, 4) });
-        bool multiline = name.ToLowerInvariant() is "info" or "copy" or "copy-message";
+        bool multiline = name.ToLowerInvariant() is "info" or "copy" or "copy-message" or "tip-description" or "resetguid" or "nextcheck" or "resetmessage";
         var input = new TextBox { Text = value, Tag = name, AcceptsReturn = multiline, TextWrapping = multiline ? TextWrapping.Wrap : TextWrapping.NoWrap,
             MinHeight = multiline ? 70 : 0, MaxHeight = multiline ? 200 : double.PositiveInfinity, VerticalScrollBarVisibility = multiline ? ScrollBarVisibility.Auto : ScrollBarVisibility.Hidden };
+        if (name.Equals("trailData", StringComparison.OrdinalIgnoreCase)) input.ToolTip = "Names the final TRL file and its project-relative folder when you compile the .taco pack (for example, DATA/MyTrail.trl). For editable trails, changing this path changes the compiled output filename; it does not rename an existing file on disk. Referenced, non-editable trails must point to an existing TRL file.";
+        bool edited = false;
+        input.TextChanged += (_, _) => edited = true;
+        if (batchName) input.ToolTip = "Enter a base name; selected assets are numbered in Outliner order. Existing trailing digits set the starting number and padding.";
         Commit(input, () =>
         {
-            if (input.Text == value) return;
+            if (input.Text == value && !(batchName && edited)) return;
             if (name.Equals("infoRange", StringComparison.OrdinalIgnoreCase) || name.Equals("triggerRange", StringComparison.OrdinalIgnoreCase))
             {
                 if (!MarkerInteraction.TryRadius(input.Text, out float radius)) { Notice("Invalid range", "Enter a finite distance in meters using a decimal point."); return; }
+                change(radius.ToString("R", CultureInfo.InvariantCulture));
+            }
+            else if (name is "bounce-height" or "bounce-duration" or "bounce-delay" or "resetLength")
+            {
+                if (!double.TryParse(input.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double number) || !double.IsFinite(number)
+                    || (name != "bounce-height" && number < 0) || (name == "bounce-duration" && number == 0))
+                {
+                    Notice("Invalid value", name == "bounce-height" ? "Enter a finite height in meters." : "Enter a finite time in seconds; duration must be positive and other times cannot be negative.");
+                    return;
+                }
+                change(number.ToString("R", CultureInfo.InvariantCulture));
+            }
+            else if (name.Equals("resetguid", StringComparison.OrdinalIgnoreCase) || name.Equals("nextCheck", StringComparison.OrdinalIgnoreCase) || name.Equals("cpReset", StringComparison.OrdinalIgnoreCase))
+            {
+                var targets = GuidResetTargets.Parse(input.Text);
+                if (targets.Invalid.Count > 0)
+                {
+                    Notice("Invalid reset targets", "Use marker GUIDs separated by commas or newlines. Invalid values: " + string.Join(", ", targets.Invalid));
+                    return;
+                }
+                if (name.Equals("cpReset", StringComparison.OrdinalIgnoreCase) && targets.Values.Count > 1) { Notice("One starting checkpoint", "cpReset accepts one GUID: the first checkpoint in the sequence."); return; }
+                change(targets.Csv);
+            }
+            else if (name is "cpColor" or "cpPreColor")
+            {
+                string rgba = input.Text.Trim();
+                if (!CheckpointAuthoring.TryRgba(rgba, out _)) { Notice("Invalid checkpoint color", "Use eight hex digits in RRGGBBAA order. Alpha is last."); return; }
+                change(rgba.ToUpperInvariant());
+            }
+            else if (name == "nextCheckCount")
+            {
+                if (!CheckpointAuthoring.TryCount(input.Text.Trim(), out int count)) { Notice("Invalid checkpoint count", "Enter a whole number of 0 or greater."); return; }
+                change(count.ToString(CultureInfo.InvariantCulture));
+            }
+            else if (name == "cpRadius")
+            {
+                if (!double.TryParse(input.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double radius) || !double.IsFinite(radius) || radius <= 0) { Notice("Invalid checkpoint radius", "Enter a positive, finite radius in meters."); return; }
                 change(radius.ToString("R", CultureInfo.InvariantCulture));
             }
             else change(input.Text);
@@ -980,7 +1006,7 @@ public partial class MainWindow : Window
         string name;
         do
         {
-            name = $"markers{xmlNumber++}.xml";
+            name = ProjectAssetPaths.FilePath(assetPaths.CoreXml, $"markers{xmlNumber++}.xml");
         }
         while (pages.Any(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) || File.Exists(Path.Combine(projectFolder!, name)));
         var xml = new XDocument(new XElement("OverlayData", new XElement("MarkerCategory", new XAttribute("name", packName), new XAttribute("DisplayName", display), new XElement("MarkerCategory", new XAttribute("name", Path.GetFileNameWithoutExtension(name)), new XAttribute("DisplayName", "New Category"))), new XElement("POIs")));
@@ -1009,15 +1035,31 @@ public partial class MainWindow : Window
                 || targets.All(t => t.Name.LocalName.Equals("MarkerCategory", StringComparison.OrdinalIgnoreCase)))).ToList();
         var dialog = new AttributePickerWindow(definitions, ReloadDefinitions) { Owner = this };
         if (dialog.ShowDialog() != true) return;
-        // Keep omitted interaction options omitted: they carry runtime fallbacks.
-        // Inherited interaction text remains inherited until explicitly overridden.
-        foreach (var group in dialog.SelectedGroups.Where(g => g.Key is "info" or "copy"))
-        foreach (var target in targets)
-        foreach (var member in group.Members.Where(m => !m.Optional))
-            if (EffectiveValue(target, member.Name, "\0") == "\0") SetValue(target, member.Name, member.DefaultValue);
-        var values = dialog.SelectedGroups.Where(g => g.Key is not ("info" or "copy")).SelectMany(g => g.Members).ToDictionary(m => m.Name, m => (string?)m.DefaultValue, StringComparer.OrdinalIgnoreCase);
-        if (targets.Count == 1) values = values.Where(p => !targets[0].Attributes().Any(a => a.Name.LocalName.Equals(p.Key, StringComparison.OrdinalIgnoreCase))).ToDictionary(p => p.Key, p => p.Value);
-        ApplyAttributeValues(targets, values);
+        // Each target keeps its own inherited values when adding an override.
+        // Trigger settings are shared XML attributes, independent of Copy text.
+        var categories = CategoryValues();
+        var additions = targets.Select(target =>
+        {
+            var values = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+            foreach (var group in dialog.SelectedGroups)
+            {
+                var fields = group.Key == "checkpoint"
+                    ? CheckpointAttributeEditing.Toggle(target, true, CheckpointDraft(target), group.Members.Where(m => CheckpointAttributeEditing.Fields.Contains(m.Name))
+                        .ToDictionary(m => m.Name, m => EffectiveValue(target, m.Name, m.DefaultValue)))
+                    : AttributePickerOptions.AddBundle(target, group, categories);
+                foreach (var pair in fields) values[pair.Key] = pair.Value;
+            }
+            foreach (var member in dialog.SelectedMembers)
+                foreach (var pair in AttributePickerOptions.AddMember(target, member, categories)) values[pair.Key] = pair.Value;
+            return (Target: target, Values: values);
+        }).ToList();
+        if (additions.Any(p => p.Values.Keys.Any(name => !AttributeApplies(p.Target, name))))
+        {
+            Notice("Attribute type", "These attributes do not apply to every selected object.");
+            return;
+        }
+        foreach (var addition in additions) AttributeRules.Apply([addition.Target], addition.Values, AttributeApplies);
+        WritePages();
     }
 
     private void ReloadDefinitions()
@@ -1109,7 +1151,8 @@ public partial class MainWindow : Window
             ElementsList.SelectedItems.Add(row);
         }
         var menu = new ContextMenu();
-        var rename = new MenuItem { Header = "Rename… (F2)" };
+        bool batchRename = (row.Kind is "POI" or "Trail") && ElementsList.SelectedItems.Count > 1;
+        var rename = new MenuItem { Header = batchRename ? "Rename selected assets… (F2)" : "Rename… (F2)" };
         rename.Click += (_, _) => QuickRename(row);
         menu.Items.Add(rename);
         if (row.Kind == "code")
@@ -1177,7 +1220,8 @@ public partial class MainWindow : Window
         if (selection.Count == 0) return;
         var categoryPaths = selection.Where(r => r.Kind == "MarkerCategory").Select(r => CategoryFullPath(r.Element!)).ToList();
         var targets = operation == "xml" ? pages.Select(p => p.Name).ToList() : Categories().Keys.Where(p => !categoryPaths.Any(c => p == c || p.StartsWith(c + '.', StringComparison.Ordinal))).ToList();
-        var dialog = new MovePickerWindow(operation, selection.Count, targets) { Owner = this };
+        var choices = operation == "xml" ? PathChoices.Files(targets) : PathChoices.Categories(CategoryDisplayNames(), targets);
+        var dialog = new MovePickerWindow(operation, selection.Count, choices) { Owner = this };
         if (dialog.ShowDialog() != true) return;
         try
         {
@@ -1240,7 +1284,15 @@ public partial class MainWindow : Window
             overlay.PreviewMouseDown += (_, _) => FlushHistoryCheckpoint();
             overlay.RepositionRequested += RepositionMarker;
             overlay.RenameAssetRequested += RenameOverlayAsset;
-            overlay.InteractionTestModeChanged += enabled => interactionTestMode = enabled;
+            overlay.ToolbarRequested += OpenOverlayToolbar;
+            overlay.ToolbarStateChanged += UpdateOverlayToolbar;
+            worldMarkers.SelectionRequested += ApplyOverlaySelection;
+            worldMarkers.ToolPointRequested += EditOverlayPoint;
+            worldMarkers.ToolAcceptRequested += MergeOverlaySegments;
+            worldMarkers.InsertPointRequested += InsertTrailPoint;
+            worldMarkers.InsertToolCancelled += StopTrailInsertTool;
+            overlay.PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape && overlayEditTool != OverlayEditTool.Select) { StopTrailInsertTool(); e.Handled = true; } else if (e.Key == Key.Enter && overlayEditTool == OverlayEditTool.MergeSegments) { MergeOverlaySegments(); e.Handled = true; } };
+            overlay.InteractionTestModeChanged += enabled => { interactionTestMode = enabled; UpdateOverlayToolbar(); advancedBaseline = true; advancedVisibility = ""; ApplyPreviewVisibility(); };
             overlay.MarkerInteractionRequested += CopyNearbyMarker;
             overlay.CopyCategoryRequested += CopyOverlayCategory;
             overlay.NewTrailRequested += NewTrail;
@@ -1272,14 +1324,13 @@ public partial class MainWindow : Window
                     });
             };
             overlay.CategoryRequested += AddOverlayCategory;
-            worldMarkers.MarkerSelected += SelectWorldMarker;
             worldMarkers.TrailSelected += SelectWorldTrail;
             worldMarkers.SelectionCleared += ClearWorldSelection;
-            worldMarkers.MarkerMoved += MoveWorldMarker;
-            worldMarkers.PointsMoved += ApplyPointTransform;
+            worldMarkers.PositionsMoved += ApplyWorldTransform;
             worldMarkers.BeginMove = () =>
             {
                 FlushHistoryCheckpoint();
+                sourceSelectionTimer.Stop();
                 xmlTimer.Stop();
                 return !workspaceBusy && mumbleSession.IsPlayable && (!trailRecording || trailPaused) && TrySyncXml();
             };
@@ -1290,6 +1341,9 @@ public partial class MainWindow : Window
             };
             overlay.Closed += (_, _) =>
             {
+                StopTrailInsertTool();
+                overlayToolbar?.Close();overlayToolbar=null;
+                StopCheckpointTest();
                 CloseInteractionHuds();
                 StopTrailRecording();
                 overlay = null;
@@ -1342,28 +1396,24 @@ public partial class MainWindow : Window
         // Building does not stop recording or create a new segment.
         FlushTrailSample();
         if (!SaveCurrentProject() || projectFile == null) return;
-        string output;
+        string staged = Path.Combine(Path.GetTempPath(), "TacoStuffer-" + Guid.NewGuid().ToString("N") + ".taco");
         try
         {
-            output = ProjectStore.ExportPath(projectFile, CurrentSnapshot());
-            Directory.CreateDirectory(Path.GetDirectoryName(output)!);
-        }
-        catch (Exception ex) when (ProjectError(ex))
-        {
-            Notice("Export location", ex.Message);
-            return;
-        }
-        try
-        {
-            var result = TestPackBuilder.Build(output, pages.Select(p => (p.Name, p.FormattedXml)).ToList(), projectFolder, editableTrails, importedAssets, assetPaths, codePages.Select(p => new ProjectCode(p.Name, p.Editor.Text)).ToList(), includeDocumentation);
-            StatusText.Text = $"Test .taco built: {result.XmlFiles} XMLs, {result.Assets} assets, {result.Placeholders.Count} placeholders.";
+            string primary = ProjectStore.ExportPath(projectFile,CurrentSnapshot());
+            var result = TestPackBuilder.Build(staged,pages.Select(p => (p.Name,p.FormattedXml)).ToList(),projectFolder,editableTrails,importedAssets,assetPaths,codePages.Select(p => new ProjectCode(p.Name,p.Editor.Text)).ToList(),includeDocumentation);
+            // Compile once so every reader receives exactly the same archive bytes.
+            var delivery = PackDelivery.Copy(staged,Path.GetFileName(primary),alternateOutputs.Prepend(Path.GetDirectoryName(primary)!));
+            StatusText.Text = $"Taco built: {result.XmlFiles} XMLs, {result.Assets} assets; delivered to {delivery.Written.Count} location(s), {delivery.Errors.Count} failed.";
             UpdateBuildStatus();
-            Notice("Test Taco stuffed", output + "\n\n" + result.XmlFiles + " XML documents and " + result.Assets + " assets.\n" + result.Placeholders.Count + " placeholder files generated.\n\nThe archive includes a test-build report. Missing images use a magenta PNG; missing trails are empty TRL headers, not recorded routes. Editable trails compile to TRL; their project sources stay editable.");
+            Notice(delivery.Errors.Count == 0 ? "Taco stuffed" : "Taco delivery results",
+                "Written:\n" + (delivery.Written.Count == 0 ? "None" : string.Join("\n",delivery.Written))
+                + (delivery.Errors.Count == 0 ? "" : "\n\nFailed destinations:\n" + string.Join("\n",delivery.Errors))
+                + "\n\n" + result.XmlFiles + " XML documents; " + result.Assets + " assets; " + result.Placeholders.Count + " placeholder files."
+                + "\nThe archive includes a test-build report. Missing images use a magenta PNG; missing trails are empty headers.");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or System.Xml.XmlException or ArgumentException)
-        {
-            Notice("Test build failed", ex.Message);
-        }
+        { Notice("Build failed",ex.Message); }
+        finally { if (File.Exists(staged)) File.Delete(staged); }
     }
 
     private void Notice(string title, string message)

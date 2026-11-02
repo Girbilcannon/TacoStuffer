@@ -70,7 +70,7 @@ internal sealed unsafe class GpuTrailRenderer : IDisposable
         try
         {
             D3D.ValidateAbi();
-            if (sizeof(FrameConstants) != 192 || sizeof(TrailGpuVertex) != 36) throw new NotSupportedException("Trail shader layout mismatch.");
+            if (sizeof(FrameConstants) != 224 || sizeof(TrailGpuVertex) != 48) throw new NotSupportedException("Trail shader layout mismatch.");
             // Hardware only: no WARP fallback that disguises CPU rendering.
             D3D.Check(D3D.D3D11CreateDevice(0, 1, 0, 0x20, 0, 0, 7, out device, out uint featureLevel, out context));
             if (featureLevel < 0xa000) throw new NotSupportedException("Direct3D feature level 10.0 or later is required.");
@@ -175,7 +175,7 @@ internal sealed unsafe class GpuTrailRenderer : IDisposable
     }
 
     public void Render(NativeGameWindow.Rect placement, nint above, MumbleSnapshot camera,
-        IReadOnlyList<WorldTrail> trails, string? folder, IReadOnlyDictionary<string, Vector3>? preview, bool cameraChanged, MapTrailVisualStyle mapStyle = MapTrailVisualStyle.Taco)
+        IReadOnlyList<WorldTrail> trails, string? folder, IReadOnlyDictionary<string, Vector3>? preview, bool cameraChanged, MapTrailVisualStyle mapStyle = MapTrailVisualStyle.Taco, bool fadeAroundPlayer = false)
     {
         if (disposed) return;
         bool fullMap = (camera.UiState & 1) != 0;
@@ -242,6 +242,8 @@ internal sealed unsafe class GpuTrailRenderer : IDisposable
             frame.Tint = new(line.Color.R / 255f, line.Color.G / 255f, line.Color.B / 255f, line.Color.A / 255f);
             frame.Origin.W = Math.Clamp(line.Alpha, 0, 1);
             frame.View.W = VisualAttributeMath.AnimationOffset(Stopwatch.GetElapsedTime(animationStart).TotalSeconds, line.AnimSpeed);
+            frame.Effects = new(line.IsWall ? 1 : 0, line.CanFade && fadeAroundPlayer ? 2 : 0, 0, 0);
+            frame.Player = new(camera.AvatarPosition, 0);
             frame.Style = new(1 / ScaleNormalization.WorldRepeatMeters, line.Height, line.FadeNear, line.FadeFar);
             bool solid = mapStyle == MapTrailVisualStyle.BlishHud;
             float mapUser = fullMap ? line.MapWidth : line.MinimapWidth;
@@ -357,7 +359,7 @@ internal sealed unsafe class GpuTrailRenderer : IDisposable
     [StructLayout(LayoutKind.Sequential)]
     private struct FrameConstants
     {
-        public Vector4 Origin, Right, Up, Forward, Tint, Style, MapRect, View, MapOrigin, MapX, MapZ, MapStyle;
+        public Vector4 Origin, Right, Up, Forward, Tint, Style, MapRect, View, MapOrigin, MapX, MapZ, MapStyle, Effects, Player;
     }
 
     private FrameConstants MakeFrame(MumbleSnapshot camera)
@@ -524,11 +526,11 @@ internal sealed unsafe class GpuTrailRenderer : IDisposable
         cbuffer Frame : register(b0) {
             float4 origin; float4 cameraRight; float4 cameraUp; float4 cameraForward;
             float4 tint; float4 style; float4 mapRect; float4 view;
-            float4 mapOrigin; float4 mapX; float4 mapZ; float4 mapStyle;
+            float4 mapOrigin; float4 mapX; float4 mapZ; float4 mapStyle; float4 effects; float4 player;
         };
         Texture2D trailTexture : register(t0);
         SamplerState repeatTexture : register(s0);
-        struct VertexIn { float3 position : POSITION; float2 uv : TEXCOORD0; float3 center : TEXCOORD1; float mapDistance : TEXCOORD2; };
+        struct VertexIn { float3 position : POSITION; float2 uv : TEXCOORD0; float3 center : TEXCOORD1; float mapDistance : TEXCOORD2; float3 wallOffset : TEXCOORD3; };
         struct VertexOut { float4 position : SV_POSITION; float2 uv : TEXCOORD0; float3 world : TEXCOORD1; };
         VertexOut VS(VertexIn input) {
             VertexOut output;
@@ -543,7 +545,7 @@ internal sealed unsafe class GpuTrailRenderer : IDisposable
                 output.world = input.center;
                 return output;
             }
-            float3 p = input.center + (input.position - input.center) * mapStyle.w + float3(0, style.y, 0);
+            float3 p = input.center + (effects.x > 0.5 ? input.wallOffset : input.position - input.center) * mapStyle.w + float3(0, style.y, 0);
             float3 relative = p - origin.xyz;
             float z = dot(relative, cameraForward.xyz);
             float nearPlane = cameraForward.w, farPlane = view.z;
@@ -564,6 +566,7 @@ internal sealed unsafe class GpuTrailRenderer : IDisposable
                 alpha *= style.w == style.z ? (distanceInches <= style.z ? 1 : 0) :
                     saturate((style.w - distanceInches) / (style.w - style.z));
             }
+            if (mapStyle.z < 0.5 && effects.y > 0) alpha *= saturate(distance(input.world, player.xyz) / effects.y);
             float4 color = mapStyle.z > 1.5 ? tint : trailTexture.Sample(repeatTexture, input.uv + float2(0, view.w)) * tint;
             color.a *= alpha;
             color.rgb *= color.a;

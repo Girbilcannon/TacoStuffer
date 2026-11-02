@@ -61,6 +61,7 @@ public static class TestPackBuilder
             foreach (string imported in importedAssets ?? [])
             {
                 string path = TacoImporter.PackPath(imported);
+                if (xmls.Any(d => d.Name.Equals(path,StringComparison.OrdinalIgnoreCase))) continue;
                 if (!includeDocumentation && ProjectDocuments.IsDocumentation(path)) continue;
                 string top = path.Split('/')[0];
                 if (top.Equals("EXPORT", StringComparison.OrdinalIgnoreCase) || top.Equals(EditableTrails.Folder, StringComparison.OrdinalIgnoreCase) || top.Equals("CUSTOM_ATTRIBUTES", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".cilantro", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Project storage cannot be packaged: " + path);
@@ -89,6 +90,13 @@ public static class TestPackBuilder
             foreach (var trail in doc.Xml.Descendants("Trail"))
             {
                 string guid = (string?)trail.Attribute("GUID") ?? "";
+                if ((editableByGuid.ContainsKey(guid) || AttributeRules.Effective(trail, "trailData", "", categories).Length > 0)
+                    && AttributeRules.Effective(trail, "texture", "", categories).Length == 0)
+                {
+                    string fallbackTexture = ProjectAssetPaths.FilePath(folders.TrailTextures, "__TacoStuffer_DefaultTrail.png");
+                    trail.SetAttributeValue("texture", fallbackTexture);
+                    entries.TryAdd(fallbackTexture, DefaultTrailPng);
+                }
                 if (!editableByGuid.TryGetValue(guid, out var editable)) continue;
                 string path = PackPath((string?)trail.Attribute("trailData") ?? ProjectAssetPaths.FilePath(folders.TrailFiles, $"trail_{editable.Number:0000}.trl"));
                 if (!path.EndsWith(".trl", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Trail data must use .trl: " + path);
@@ -96,12 +104,6 @@ public static class TestPackBuilder
                     throw new InvalidOperationException("Editable trail MapID differs from its XML or is invalid: " + guid);
                 if (compiledPaths.TryGetValue(path, out var other) && other != guid) throw new InvalidOperationException("Two editable trails target the same TRL path: " + path);
                 compiledPaths[path] = guid;
-                if (AttributeRules.Effective(trail, "texture", "", categories).Length == 0)
-                {
-                    string fallbackTexture = ProjectAssetPaths.FilePath(folders.TrailTextures, "__TacoStuffer_DefaultTrail.png");
-                    trail.SetAttributeValue("texture", fallbackTexture);
-                    entries.TryAdd(fallbackTexture, DefaultTrailPng);
-                }
                 trail.SetAttributeValue("trailData", path);
                 entries[path] = EditableTrails.Compile(editable);
             }
@@ -170,7 +172,7 @@ public static class TestPackBuilder
         }
         const string reportName = "__TacoStuffer_TestBuild.txt";
         if (entries.ContainsKey(reportName)) throw new InvalidOperationException("Reserved test report filename.");
-        entries.Add(reportName, Encoding.UTF8.GetBytes("TACO STUFFER TEST PACK — not a production build\n\n" + xmls.Count + " XML documents; " + assets + " assets.\nClosed XML tabs are included. Configured asset folders and XML-linked files are copied; linked editable trails compile to TRL. EDITABLE_TRAILS is excluded.\nEmpty TRL placeholders contain only version/map headers, no route points; map 0 means unknown.\nRepeated category declarations may establish shared order. Compatibility must be tested in each target reader.\n\nGenerated placeholders:\n" + (placeholders.Count == 0 ? "None" : string.Join('\n', placeholders))));
+        entries.Add(reportName, Encoding.UTF8.GetBytes("TACO STUFFER PACK BUILD REPORT\n\n" + xmls.Count + " XML documents; " + assets + " assets.\nClosed XML tabs are included. Configured asset folders and XML-linked files are copied; linked editable trails compile to TRL. EDITABLE_TRAILS is excluded.\nEmpty TRL placeholders contain only version/map headers, no route points; map 0 means unknown.\nRepeated category declarations may establish shared order. Compatibility must be tested in each target reader.\n\nGenerated placeholders:\n" + (placeholders.Count == 0 ? "None" : string.Join('\n', placeholders))));
         string finalPath = Path.GetFullPath(output);
         string temp = finalPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try

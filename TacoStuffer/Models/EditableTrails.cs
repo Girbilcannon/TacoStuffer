@@ -167,6 +167,41 @@ public static class EditableTrails
         segment.GeometryChanged();
     }
 
+    // Split at deleted runs, not by point IDs: IDs survive resampling and need
+    // not be numerically ordered. Keep the first survivor's segment identity;
+    // new pieces get fresh IDs and retain density settings and point identities.
+    public static void DeletePoints(EditableTrail trail, long segmentId, ISet<long> deleted, bool split)
+    {
+        int index = trail.Segments.FindIndex(s => s.Id == segmentId);
+        if (index < 0) return;
+        var segment = trail.Segments[index];
+        if (!segment.Points.Any(p => deleted.Contains(p.Id))) return;
+        segment.ResetResampling();
+        if (!split)
+        {
+            segment.Points.RemoveAll(p => deleted.Contains(p.Id));
+            return;
+        }
+        var runs = new List<List<TrailPoint>>();
+        List<TrailPoint>? run = null;
+        foreach (var point in segment.Points)
+        {
+            if (deleted.Contains(point.Id)) { run = null; continue; }
+            if (run == null) { run = []; runs.Add(run); }
+            run.Add(point);
+        }
+        trail.Segments.RemoveAt(index);
+        foreach (var points in runs)
+        {
+            var piece = runs[0] == points ? segment : new TrailSegment { Id = trail.NextSegment++ };
+            piece.Points = points;
+            piece.NextPoint = segment.NextPoint;
+            piece.Smoothness = segment.Smoothness;
+            piece.SourceSmoothness = segment.SourceSmoothness;
+            trail.Segments.Insert(index++, piece);
+        }
+    }
+
     public static int RemoveLegacyCategories(IReadOnlyList<XDocument> documents, IReadOnlyList<EditableTrail> trails)
     {
         int removed = 0;

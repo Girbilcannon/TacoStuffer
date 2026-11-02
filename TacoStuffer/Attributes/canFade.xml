@@ -1,0 +1,3 @@
+<AttributeGroup version="1" key="canFade" displayName="Can Fade" appliesTo="POI,Trail,MarkerCategory">
+  <Attribute name="canFade" default="true" type="bool" optional="false" />
+</AttributeGroup>

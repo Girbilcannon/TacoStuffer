@@ -17,10 +17,15 @@ public partial class MainWindow
     private string? projectFile;
     private ProjectAssetPaths assetPaths = new();
     private string tacoOutputFolder = "";
+    private List<string> alternateOutputs = [];
+    private List<string> assetFolders = [];
+    private List<string> outlinerOrder = [];
+    private Dictionary<string,int> outlinerRanks = [];
+    private readonly HashSet<string> diskDocuments = new(StringComparer.OrdinalIgnoreCase);
     private bool includeDocumentation = true;
     private string savedFingerprint = "";
     private long nextMarkerNumber = 1;
-    private string WorkspaceFingerprint() => ProjectTitle.Text + "\0" + includeDocumentation + "\0" + tacoOutputFolder + "\0" + string.Join("\0", pages.Select(p => p.Name + "\0" + PageSource(p))) + "\0" + string.Join("\0", textureLabels.OrderBy(p => p.Key).Select(p => p.Key + "=" + p.Value)) + "\0" + string.Join("\0", categoryOrder) + "\0" + nextMarkerNumber + "\0" + nextTrailNumber + "\0" + string.Join("\0", editableTrails.Select(EditableTrails.Serialize)) + "\0" + string.Join("\0", codePages.Select(p => p.Name + "\0" + p.Editor.Text)) + "\0" + assetPaths;
+    private string WorkspaceFingerprint() => ProjectTitle.Text + "\0" + includeDocumentation + "\0" + tacoOutputFolder + "\0" + string.Join("\0", pages.Select(p => p.Name + "\0" + PageSource(p))) + "\0" + string.Join("\0", textureLabels.OrderBy(p => p.Key).Select(p => p.Key + "=" + p.Value)) + "\0" + string.Join("\0", categoryOrder) + "\0" + nextMarkerNumber + "\0" + nextTrailNumber + "\0" + string.Join("\0", editableTrails.Select(EditableTrails.Serialize)) + "\0" + string.Join("\0", codePages.Select(p => p.Name + "\0" + p.Editor.Text)) + "\0" + assetPaths + "\0" + string.Join("\0", alternateOutputs) + "\0" + string.Join("\0", assetFolders) + "\0" + string.Join("\0",outlinerOrder);
 
     private void InitializeProjectPersistence()
     {
@@ -38,7 +43,7 @@ public partial class MainWindow
         return prompt.Choice == "discard" || (prompt.Choice == "save" && SaveCurrentProject());
     }
 
-    private ProjectSnapshot CurrentSnapshot() => new(ProjectTitle.Text, tacoOutputFolder, pages.Select(p => new ProjectXml(p.Name, p.FormattedXml, TabOwner(p.Tab) != null || detachedTabs.ContainsKey(p.Tab))).ToList(), new Dictionary<string, string>(textureLabels, StringComparer.OrdinalIgnoreCase), new List<string>(categoryOrder), collapsedElements.ToList(), nextMarkerNumber, editableTrails.ToList(), nextTrailNumber, importedAssets.ToList(), codePages.Select(p => new ProjectCode(p.Name, p.Editor.Text, ViewOpen(p.Tab))).ToList(), assetPaths, includeDocumentation);
+    private ProjectSnapshot CurrentSnapshot() => new(ProjectTitle.Text, tacoOutputFolder, pages.Select(p => new ProjectXml(p.Name, p.FormattedXml, TabOwner(p.Tab) != null || detachedTabs.ContainsKey(p.Tab))).ToList(), new Dictionary<string, string>(textureLabels, StringComparer.OrdinalIgnoreCase), new List<string>(categoryOrder), collapsedElements.ToList(), nextMarkerNumber, editableTrails.ToList(), nextTrailNumber, importedAssets.ToList(), codePages.Select(p => new ProjectCode(p.Name, p.Editor.Text, ViewOpen(p.Tab))).ToList(), assetPaths, includeDocumentation, assetFolders.ToList(), alternateOutputs.ToList(),outlinerOrder.ToList());
 
     private static bool ProjectError(Exception ex) => ex is IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException or XmlException or ArgumentException;
 
@@ -49,6 +54,7 @@ public partial class MainWindow
             Notice("No project", "Create or load a project first.");
             return false;
         }
+        ReconcileDiskAssets();
         if (!TrySyncXml()) return false;
         try
         {
@@ -83,6 +89,7 @@ public partial class MainWindow
                 catalog.Reload(projectFolder);
             }
             else ProjectStore.Save(projectFile, CurrentSnapshot());
+            RememberDiskDocuments();
             savedFingerprint = WorkspaceFingerprint();
             EditorNotice.Text = "Project saved. XML files retain their project-relative paths.";
             StatusText.Text = "Saved " + projectFile;
@@ -141,6 +148,7 @@ public partial class MainWindow
 
     private void ApplyProject(string file, ProjectSnapshot snapshot)
     {
+        StopTrailInsertTool();
         restoringHistory = true;
         try
         {
@@ -156,6 +164,8 @@ public partial class MainWindow
     private void ApplyProjectCore(string file, ProjectSnapshot snapshot)
     {
         if (!ReturnGameToDesktop()) throw new InvalidOperationException("Return GW2 to the desktop before changing projects.");
+        checkpointAttributeDrafts.Clear();
+        pendingCheckpointResets.Clear();
         long markerSeed = MarkerRecording.NextNumber(snapshot.Documents.Select(d => ParseXml(d.Content)), snapshot.NextMarkerNumber);
         StopTrailRecording();
         xmlTimer.Stop();
@@ -183,9 +193,14 @@ public partial class MainWindow
         projectFile = file;
         projectFolder = Path.GetDirectoryName(file);
         tacoOutputFolder = snapshot.OutputFolder;
+        alternateOutputs = snapshot.AlternateOutputs?.Take(2).ToList() ?? [];
+        assetFolders = snapshot.AssetFolders?.ToList() ?? [];
+        diskDocuments.Clear();
+        outlinerOrder = snapshot.OutlinerOrder?.ToList() ?? [];
         includeDocumentation = snapshot.IncludeDocumentation;
         ProjectTitle.Text = snapshot.Name;
         assetPaths = (snapshot.AssetPaths ?? ((snapshot.ImportedAssets?.Count ?? 0) > 0 ? ProjectAssetPaths.Infer(snapshot.Documents.Select(d => ParseXml(d.Content))) : new())).Validated();
+        assetPaths = AssetFolders.ExistingDefaults(projectFolder!, assetPaths);
         importedAssets.Clear();
         importedAssets.AddRange(snapshot.ImportedAssets ?? []);
         nextMarkerNumber = markerSeed;
@@ -234,6 +249,8 @@ public partial class MainWindow
             RegisterCode(code);
             if (code.Open && OpenDocumentTabs().Count() < 5) OpenTab(codePages[^1].Tab);
         }
+        PruneEditableTrails();
+        RememberDiskDocuments();
         catalog.Reload(projectFolder);
         RefreshExplorer();
         AttributesHost.Children.Clear();

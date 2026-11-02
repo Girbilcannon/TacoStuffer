@@ -1,0 +1,3 @@
+<AttributeGroup version="1" key="defaultToggle" displayName="Toggle (Category Default)" appliesTo="MarkerCategory">
+  <Attribute name="defaultToggle" default="true" type="bool" optional="false" />
+</AttributeGroup>

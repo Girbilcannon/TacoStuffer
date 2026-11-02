@@ -38,8 +38,14 @@ public sealed class InteractionHudWindow : Window
         body.Children.Add(detail);
         if (!isInfo) body.Children.Add(copy);
         copy.Click += (_, _) => CopyRequested?.Invoke();
-        Content = new Border { CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1), BorderBrush = Brushes.DimGray,
-            Background = new SolidColorBrush(Color.FromArgb(220, 42, 44, 48)), Child = body };
+        Content = new Border
+        {
+            CornerRadius = new CornerRadius(8),
+            BorderThickness = new Thickness(1),
+            BorderBrush = Brushes.DimGray,
+            Background = new SolidColorBrush(Color.FromArgb(220, 42, 44, 48)),
+            Child = body
+        };
         SourceInitialized += (_, _) => NativeGameWindow.DisableActivation(new WindowInteropHelper(this).Handle);
     }
 
@@ -53,13 +59,19 @@ public sealed class InteractionHudWindow : Window
 
     public void Present(NativeGameWindow.Rect game, nint panel, bool top)
     {
-        if (!IsVisible) Show();
+        bool shown = !IsVisible;
+        if (shown) Show();
         UpdateLayout();
         var dpi = VisualTreeHelper.GetDpi(this);
         int width = Math.Min(game.Right - game.Left, (int)Math.Ceiling(ActualWidth * dpi.DpiScaleX));
         int height = (int)Math.Ceiling(ActualHeight * dpi.DpiScaleY);
         int x = game.Left + (game.Right - game.Left - width) / 2;
         int y = top ? game.Top + 30 : Math.Max(game.Top, game.Bottom - height - 40);
-        NativeGameWindow.PlaceOverlay(new WindowInteropHelper(this).Handle, panel, x, y, width, height, true);
+        nint handle = new WindowInteropHelper(this).Handle;
+        if (shown || !NativeGameWindow.HasCorrectOverlayBand(handle, false))
+            NativeGameWindow.PlaceOverlay(handle, panel, x, y, width, height, true);
+        else if (NativeGameWindow.GetWindowRect(handle, out var rect) &&
+            (rect.Left != x || rect.Top != y || rect.Right - rect.Left != width || rect.Bottom - rect.Top != height))
+            NativeGameWindow.SetWindowPos(handle, 0, x, y, width, height, 0x0014);
     }
 }

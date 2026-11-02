@@ -4,14 +4,34 @@ namespace TacoStuffer.Models;
 
 public static class AttributeRules
 {
+    public sealed record InheritedAttribute(string Name, string Value, string Category, bool Overridden);
     private static string Local(XElement element, string name, string fallback) => element.Attributes().FirstOrDefault(a => a.Name.LocalName.Equals(name, StringComparison.OrdinalIgnoreCase))?.Value ?? fallback;
+
+    public static IReadOnlyList<InheritedAttribute> Inherited(XElement element, IReadOnlyDictionary<string, XElement> categories)
+    {
+        var result = new Dictionary<string, InheritedAttribute>(StringComparer.OrdinalIgnoreCase);
+        if (element.Name.LocalName is not ("POI" or "Trail")) return [];
+        string path = Local(element, "type", "");
+        while (path.Length > 0)
+        {
+            if (categories.TryGetValue(path, out var category))
+                foreach (var attribute in category.Attributes())
+                {
+                    string name = attribute.Name.LocalName;
+                    if (name.ToLowerInvariant() is "name" or "displayname" or "guid" or "type" or "isseparator" or "ishidden" or "defaulttoggle") continue;
+                    result.TryAdd(name, new(name, attribute.Value, path, Local(element, name, "\0") != "\0"));
+                }
+            int dot = path.LastIndexOf('.'); path = dot < 0 ? "" : path[..dot];
+        }
+        return result.Values.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase).ToList();
+    }
 
     public static string Effective(XElement element, string name, string fallback, IReadOnlyDictionary<string, XElement> categories)
     {
         string local = Local(element, name, "\0");
         if (local != "\0") return local;
         if (element.Name == "MarkerCategory" || element.Name.LocalName is not ("POI" or "Trail")) return fallback;
-        if (name.ToLowerInvariant() is "name" or "displayname" or "guid" or "type" or "isseparator") return fallback;
+        if (name.ToLowerInvariant() is "name" or "displayname" or "guid" or "type" or "isseparator" or "ishidden" or "defaulttoggle") return fallback;
         string path = Local(element, "type", "");
         while (path.Length > 0)
         {

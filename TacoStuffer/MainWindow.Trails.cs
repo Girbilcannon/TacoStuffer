@@ -112,6 +112,7 @@ public partial class MainWindow
 
     private void StartTrailRecording()
     {
+        StopTrailInsertTool();
         PollGame();
         if (overlay == null || !mumbleSession.IsPlayable || gameFrame == null || recordingTrail == null || !TrySyncXml()) return;
         if (gameFrame.MapId != recordingTrail.MapId)
@@ -433,7 +434,15 @@ public partial class MainWindow
                 editableTrails.First(t => t.Number == p.Ref!.Trail).Segments.First(s => s.Id == p.Ref!.Segment).ResetResampling();
                 point.Position = p.Value;
             }
-            RefreshExplorer();
+            // Coordinates do not change point IDs, row labels or hierarchy.
+            // Keep the current point selection and expanded branches intact.
+            sourceSelectionTimer.Stop();
+            worldMarkers?.InvalidateTrails();
+            BuildCheckpointNodes();
+            SyncOverlaySelection();
+            if (selected?.Kind is "point" or "segment")
+                UpdateLiveCoordinates(EditableTrails.Pivot(selectedTrailPoints.Select(ResolvePoint).OfType<TrailPoint>().Select(p => p.Position)));
+            QueueHistoryCheckpoint("Move trail points");
             StatusText.Text = "Trail points updated. Save to retain editable data.";
         }
         else UpdateLiveCoordinates(EditableTrails.Pivot(resolved.Select(p => p.Value)));
@@ -461,18 +470,23 @@ public partial class MainWindow
             if (!trailPaused) return;
         }
         if (points.Count == 0) return;
-        var confirm = new ConfirmActionWindow("Delete trail points", "Delete " + points.Count + " selected points? Remaining neighbors connect directly.") { Owner = DeleteDialogOwner, Topmost = DeleteDialogOwner.Topmost };
+        var confirm = new ConfirmActionWindow("Delete trail points", "Delete " + points.Count + " selected points?\n\nDelete connects remaining neighbors. Delete and Split Segment leaves a gap at each deleted stretch.", offerSplitSegment: true) { Owner = DeleteDialogOwner, Topmost = DeleteDialogOwner.Topmost };
         if (confirm.ShowDialog() != true) return;
-        foreach (var r in points)
-        if (editableTrails.FirstOrDefault(t => t.Number == r.Trail)?.Segments.FirstOrDefault(s => s.Id == r.Segment) is { } segment)
+        FlushHistoryCheckpoint();
+        // A paused recording must not retain a segment reference that a split removes.
+        if (confirm.SplitSegment && points.Any(p => p.Trail == recordingTrail?.Number && p.Segment == recordingSegment?.Id))
         {
-            segment.ResetResampling();
-            segment.Points.RemoveAll(p => p.Id == r.Point);
+            StopTrailRecording();
+            recordingSegment = null;
         }
+        foreach (var group in points.GroupBy(p => (p.Trail, p.Segment)))
+        if (editableTrails.FirstOrDefault(t => t.Number == group.Key.Trail) is { } trail)
+            EditableTrails.DeletePoints(trail, group.Key.Segment, group.Select(p => p.Point).ToHashSet(), confirm.SplitSegment);
         selectedTrailPoints.Clear();
         selected = null;
         RefreshExplorer();
         ClearWorldSelection();
+        UpdateTrailControls();
     }
 
     private void DeleteTrailSegments()

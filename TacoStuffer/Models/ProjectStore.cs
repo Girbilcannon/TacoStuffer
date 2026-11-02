@@ -10,7 +10,7 @@ public sealed record ProjectCode(string Name, string Content, bool Open = false)
 
 public sealed record ProjectXml(string Name, string Content, bool Open = true);
 
-public sealed record ProjectSnapshot(string Name, string OutputFolder, List<ProjectXml> Documents, Dictionary<string, string> TextureLabels, List<string>? CategoryOrder = null, List<string>? CollapsedElements = null, long NextMarkerNumber = 1, List<EditableTrail>? Trails = null, long NextTrailNumber = 1, List<string>? ImportedAssets = null, List<ProjectCode>? CodeDocuments = null, ProjectAssetPaths? AssetPaths = null, bool IncludeDocumentation = true);
+public sealed record ProjectSnapshot(string Name, string OutputFolder, List<ProjectXml> Documents, Dictionary<string, string> TextureLabels, List<string>? CategoryOrder = null, List<string>? CollapsedElements = null, long NextMarkerNumber = 1, List<EditableTrail>? Trails = null, long NextTrailNumber = 1, List<string>? ImportedAssets = null, List<ProjectCode>? CodeDocuments = null, ProjectAssetPaths? AssetPaths = null, bool IncludeDocumentation = true, List<string>? AssetFolders = null, List<string>? AlternateOutputs = null, List<string>? OutlinerOrder = null);
 
 public static class ProjectStore
 {
@@ -75,6 +75,7 @@ public static class ProjectStore
         var documents = new List<ProjectXml>();
         for (int i = 0; i < names.Count; i++)
         {
+            if (!File.Exists(Path.Combine(folder, names[i]))) continue;
             var xml = ReadXml(Path.Combine(folder, names[i]));
             if (xml.Root?.Name != "OverlayData") throw new InvalidOperationException("XML root must be OverlayData: " + names[i]);
             documents.Add(new(names[i], xml.ToString(), (string?)nodes[i].Attribute("open") != "false"));
@@ -101,12 +102,16 @@ public static class ProjectStore
         var codeNames = root.Element("CodeDocuments")?.Elements("File").Select(e => (string?)e.Attribute("path") ?? "").ToList() ?? [];
         if (assets.Concat(codeNames).Any(p => !ValidPackPath(p))) throw new InvalidOperationException("Invalid imported asset path.");
         var pathsNode = root.Element("AssetPaths");
-        var assetPaths = new ProjectAssetPaths((string?)pathsNode?.Attribute("markerIcons") ?? "TEXTURES", (string?)pathsNode?.Attribute("trailTextures") ?? "TEXTURES", (string?)pathsNode?.Attribute("trailFiles") ?? "DATA").Validated();
+        var assetPaths = new ProjectAssetPaths((string?)pathsNode?.Attribute("markerIcons") ?? "TEXTURES", (string?)pathsNode?.Attribute("trailTextures") ?? "TEXTURES", (string?)pathsNode?.Attribute("trailFiles") ?? "DATA", (string?)pathsNode?.Attribute("docs") ?? "DOCS", (string?)pathsNode?.Attribute("scripts") ?? "scripts", (string?)pathsNode?.Attribute("coreXml") ?? ".").Validated();
         if (codeNames.Distinct(StringComparer.OrdinalIgnoreCase).Count() != codeNames.Count || codeNames.Any(p => ProjectDocuments.Kind(p) == null || names.Contains(p, StringComparer.OrdinalIgnoreCase)))
             throw new InvalidOperationException("Code/document filenames must be supported, unique and separate from XML files.");
         var openCode = root.Element("CodeDocuments")?.Elements("File").ToDictionary(e => (string)e.Attribute("path")!, e => (string?)e.Attribute("open") == "true", StringComparer.OrdinalIgnoreCase) ?? new();
-        var code = codeNames.Select(p => new ProjectCode(p, File.ReadAllText(Path.Combine(folder, p)), openCode[p])).ToList();
-        return new(name, (string?)root.Attribute("tacoOutputFolder") ?? "", documents, labels, order, collapsed, nextMarker, trails, nextTrail, assets, code, pathsNode == null ? null : assetPaths, !string.Equals((string?)root.Attribute("includeDocumentation"), "false", StringComparison.OrdinalIgnoreCase));
+        assets.RemoveAll(p => !File.Exists(Path.Combine(folder,p)));
+        var code = codeNames.Where(p => File.Exists(Path.Combine(folder,p))).Select(p => new ProjectCode(p, File.ReadAllText(Path.Combine(folder, p)), openCode[p])).ToList();
+        return new(name, (string?)root.Attribute("tacoOutputFolder") ?? "", documents, labels, order, collapsed, nextMarker, trails, nextTrail, assets, code, pathsNode == null ? null : assetPaths, !string.Equals((string?)root.Attribute("includeDocumentation"), "false", StringComparison.OrdinalIgnoreCase),
+            root.Element("AssetFolders")?.Elements("Folder").Select(e => ProjectAssetPaths.Folder((string?)e.Attribute("path") ?? "")).ToList(),
+            root.Element("AlternateOutputs")?.Elements("Folder").Select(e => (string?)e.Attribute("path") ?? "").ToList(),
+            root.Element("OutlinerOrder")?.Elements("Row").Select(e => (string?)e.Attribute("id") ?? "").ToList());
     }
 
     public static string Create(ProjectSnapshot snapshot, string parentFolder)
@@ -118,7 +123,7 @@ public static class ProjectStore
         Directory.CreateDirectory(folder);
         try
         {
-            foreach (string child in new[] { "CUSTOM_ATTRIBUTES", EditableTrails.Folder }.Concat(new[] { (snapshot.AssetPaths ?? new()).Validated().MarkerIcons, (snapshot.AssetPaths ?? new()).Validated().TrailTextures, (snapshot.AssetPaths ?? new()).Validated().TrailFiles }).Distinct(StringComparer.OrdinalIgnoreCase)) Directory.CreateDirectory(Path.Combine(folder, child));
+            foreach (string child in new[] { "CUSTOM_ATTRIBUTES", EditableTrails.Folder }.Concat((snapshot.AssetPaths ?? new()).Validated().All).Distinct(StringComparer.OrdinalIgnoreCase)) Directory.CreateDirectory(Path.Combine(folder, child));
             string file = Path.Combine(folder, snapshot.Name + ".cilantro");
             Save(file, snapshot);
             return file;
@@ -136,7 +141,7 @@ public static class ProjectStore
         string outputFolder = snapshot.OutputFolder.Length == 0 ? Path.Combine(projectFolder, "EXPORT") : snapshot.OutputFolder;
         if (!Path.IsPathFullyQualified(outputFolder)) throw new InvalidOperationException("The .taco output location must be an absolute folder path.");
         string output = Path.GetFullPath(outputFolder);
-        foreach (string assetFolder in new[] { (snapshot.AssetPaths ?? new()).Validated().MarkerIcons, (snapshot.AssetPaths ?? new()).Validated().TrailTextures, (snapshot.AssetPaths ?? new()).Validated().TrailFiles })
+        foreach (string assetFolder in (snapshot.AssetPaths ?? new()).Validated().All)
         {
             if (assetFolder == ".") continue;
             string assetRoot = Path.GetFullPath(Path.Combine(projectFolder, assetFolder));
@@ -159,7 +164,10 @@ public static class ProjectStore
         if (snapshot.NextMarkerNumber < 1) throw new InvalidOperationException("Invalid next marker number.");
         var assetPaths = (snapshot.AssetPaths ?? new()).Validated();
         var manifest = new XDocument(new XElement("CilantroProject", new XAttribute("version", "1"), new XAttribute("includeDocumentation", snapshot.IncludeDocumentation ? "true" : "false"), new XAttribute("name", snapshot.Name), new XAttribute("tacoOutputFolder", snapshot.OutputFolder), new XAttribute("nextMarkerNumber", snapshot.NextMarkerNumber), new XAttribute("nextTrailNumber", snapshot.NextTrailNumber),
-            new XElement("AssetPaths", new XAttribute("markerIcons", assetPaths.MarkerIcons), new XAttribute("trailTextures", assetPaths.TrailTextures), new XAttribute("trailFiles", assetPaths.TrailFiles)),
+            new XElement("AssetPaths", new XAttribute("markerIcons", assetPaths.MarkerIcons), new XAttribute("trailTextures", assetPaths.TrailTextures), new XAttribute("trailFiles", assetPaths.TrailFiles), new XAttribute("docs", assetPaths.Docs), new XAttribute("scripts", assetPaths.Scripts), new XAttribute("coreXml", assetPaths.CoreXml)),
+            new XElement("AssetFolders", (snapshot.AssetFolders ?? []).Select(p => new XElement("Folder", new XAttribute("path", ProjectAssetPaths.Folder(p))))),
+            new XElement("AlternateOutputs", (snapshot.AlternateOutputs ?? []).Select(p => new XElement("Folder", new XAttribute("path", p)))),
+            new XElement("OutlinerOrder", (snapshot.OutlinerOrder ?? []).Select(p => new XElement("Row",new XAttribute("id",p)))),
             new XElement("ImportedAssets", (snapshot.ImportedAssets ?? []).Select(p => new XElement("File", new XAttribute("path", p)))),
             new XElement("CodeDocuments", (snapshot.CodeDocuments ?? []).Select(p => new XElement("File", new XAttribute("path", p.Name), new XAttribute("open", p.Open ? "true" : "false")))),
             new XElement("EditableTrails", (snapshot.Trails ?? []).Select(t => new XElement("Trail", new XAttribute("number", t.Number)))),
@@ -176,7 +184,7 @@ public static class ProjectStore
         {
             if (ReadContent(doc.Content).Root?.Name != "OverlayData") throw new InvalidOperationException("Invalid XML root: " + doc.Name);
             string path = Path.Combine(folder, doc.Name);
-            if (File.Exists(path) && !oldNames.Contains(doc.Name, StringComparer.OrdinalIgnoreCase)) throw new InvalidOperationException("An untracked XML already exists: " + doc.Name);
+            if (File.Exists(path) && !oldNames.Contains(doc.Name, StringComparer.OrdinalIgnoreCase) && !(snapshot.ImportedAssets ?? []).Contains(doc.Name, StringComparer.OrdinalIgnoreCase)) throw new InvalidOperationException("An untracked XML already exists: " + doc.Name);
             writes.Add(path, Encoding.UTF8.GetBytes(doc.Content));
         }
         var oldManifest = File.Exists(file) ? ReadXml(file).Root : null;
@@ -187,7 +195,7 @@ public static class ProjectStore
         {
             if (ProjectDocuments.Kind(code.Name) == null || names.Contains(code.Name, StringComparer.OrdinalIgnoreCase)) throw new InvalidOperationException("Invalid code/document path: " + code.Name);
             string codePath = Path.Combine(folder, code.Name);
-            if (File.Exists(codePath) && !trackedCode.Contains(code.Name)) throw new InvalidOperationException("An untracked file already exists: " + code.Name);
+            if (File.Exists(codePath) && !trackedCode.Contains(code.Name) && !(snapshot.ImportedAssets ?? []).Contains(code.Name,StringComparer.OrdinalIgnoreCase)) throw new InvalidOperationException("An untracked file already exists: " + code.Name);
             writes.Add(codePath, Encoding.UTF8.GetBytes(code.Content));
         }
         Directory.CreateDirectory(Path.Combine(folder, EditableTrails.Folder));

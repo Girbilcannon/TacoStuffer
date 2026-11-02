@@ -128,12 +128,13 @@ internal static unsafe class Direct3D11Native
         nint position = Marshal.StringToHGlobalAnsi("POSITION"), uv = Marshal.StringToHGlobalAnsi("TEXCOORD");
         try
         {
-            InputElement* elements = stackalloc InputElement[4];
+            InputElement* elements = stackalloc InputElement[5];
             elements[0] = new() { Name = position, Format = 6 };
             elements[1] = new() { Name = uv, Format = 16, Offset = 12 };
             elements[2] = new() { Name = uv, Index = 1, Format = 6, Offset = 20 };
             elements[3] = new() { Name = uv, Index = 2, Format = 41, Offset = 32 };
-            nint value = 0; Check(((delegate* unmanaged[Stdcall]<nint, InputElement*, uint, nint, nuint, nint*, int>)Slot(device, 11))(device, elements, 4, BlobData(blob), BlobSize(blob), &value)); return value;
+            elements[4] = new() { Name = uv, Index = 3, Format = 6, Offset = 36 };
+            nint value = 0; Check(((delegate* unmanaged[Stdcall]<nint, InputElement*, uint, nint, nuint, nint*, int>)Slot(device, 11))(device, elements, 5, BlobData(blob), BlobSize(blob), &value)); return value;
         }
         finally { Marshal.FreeHGlobal(position); Marshal.FreeHGlobal(uv); }
     }
@@ -186,7 +187,9 @@ internal static unsafe class Direct3D11Native
     }
     internal static void Draw(nint context, nint vertices, nint indices, nint texture, uint count)
     {
-        uint stride = 36, offset = 0;
+        // Use the uploaded vertex type, including its wall offset. A stale
+        // literal here reads UV/offset bytes as positions in subsequent vertices.
+        uint stride = (uint)sizeof(TacoStuffer.Models.TrailGpuVertex), offset = 0;
         ((delegate* unmanaged[Stdcall]<nint, uint, uint, nint*, uint*, uint*, void>)Slot(context, 18))(context, 0, 1, &vertices, &stride, &offset);
         ((delegate* unmanaged[Stdcall]<nint, nint, uint, uint, void>)Slot(context, 19))(context, indices, 42, 0); // R32_UINT
         ((delegate* unmanaged[Stdcall]<nint, uint, uint, nint*, void>)Slot(context, 8))(context, 0, 1, &texture);

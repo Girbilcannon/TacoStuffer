@@ -1,0 +1,7 @@
+<AttributeGroup version="1" key="script" displayName="Script (Authoring Only)" appliesTo="POI,Trail,MarkerCategory">
+  <Attribute name="script-trigger" default="" type="script" optional="false" />
+  <Attribute name="script-focus" default="" type="script" optional="true" />
+  <Attribute name="script-tick" default="" type="script" optional="true" />
+  <Attribute name="script-filter" default="" type="script" optional="true" />
+  <Attribute name="script-once" default="" type="script" optional="true" />
+</AttributeGroup>

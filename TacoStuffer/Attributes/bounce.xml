@@ -1,0 +1,6 @@
+<AttributeGroup version="1" key="bounce" displayName="Bounce" appliesTo="POI,MarkerCategory">
+  <Attribute name="bounce" default="bounce" type="bounce" optional="false" />
+  <Attribute name="bounce-height" default="2" type="number" optional="true" />
+  <Attribute name="bounce-duration" default="1" type="number" optional="true" />
+  <Attribute name="bounce-delay" default="0" type="number" optional="true" />
+</AttributeGroup>

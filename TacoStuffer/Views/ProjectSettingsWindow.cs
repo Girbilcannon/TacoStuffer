@@ -10,8 +10,9 @@ public sealed class ProjectSettingsWindow : PreviewDialog
 {
     public ProjectAssetPaths Paths { get; private set; }
     public string OutputFolder { get; private set; }
+    public List<string> AlternateOutputs { get; private set; } = [];
     public bool IncludeDocumentation { get; private set; }
-    public ProjectSettingsWindow(string projectRoot, ProjectAssetPaths current, string currentOutputFolder, bool includeDocumentation = true) : base("Project Settings", 610)
+    public ProjectSettingsWindow(string projectRoot, ProjectAssetPaths current, string currentOutputFolder, bool includeDocumentation = true, Action? openAssets = null, Func<ProjectAssetPaths>? currentPaths = null, IReadOnlyList<string>? alternateOutputs = null) : base("Project Settings", 610)
     {
         Paths = current;
         OutputFolder = currentOutputFolder;
@@ -27,44 +28,33 @@ public sealed class ProjectSettingsWindow : PreviewDialog
             };
             if (browse.ShowDialog(this) == true) output.Text = browse.FolderName;
         });
-        Label("Leave blank to use this project's EXPORT folder. The selected folder is used for future builds; existing .taco files stay in their current location.");
+        Label("Leave blank to use this project's EXPORT folder.");
+        var alternates = new List<TextBox>();
+        for (int i=0;i<2;i++)
+        {
+            Label("Alternate marker pack folder " + (i+1) + " · optional");
+            var input = Input(alternateOutputs?.ElementAtOrDefault(i) ?? ""); alternates.Add(input);
+            Action("Browse alternate location…",(_,_) => {
+                var browse = new OpenFolderDialog { Title = "Choose an alternate marker pack folder", InitialDirectory = Directory.Exists(input.Text.Trim()) ? input.Text.Trim() : projectRoot };
+                if (browse.ShowDialog(this) == true) input.Text = browse.FolderName;
+            });
+        }
+        Label("Stuff Taco Now writes the same pack to every configured location. Empty or duplicate locations are skipped.");
         var includeDocs = new CheckBox { Content = "Include documentation in compiled .taco", IsChecked = includeDocumentation, Margin = new Thickness(0, 12, 0, 4) };
         Body.Children.Add(includeDocs);
         Label("Includes Markdown and plain-text documents. Uncheck to keep build notes only in your project. Scripts are included separately.");
-        Label("Asset folders · relative to this project");
-        Label("Choose a folder inside the project, or use . for the project root. Pickers include subfolders. These defaults do not move existing files or change XML references.");
-        TextBox Field(string label, string value)
-        {
-            Label(label);
-            var input = Input(value);
-            Action("Browse…", (_, _) =>
-            {
-                var browse = new OpenFolderDialog { Title = label, InitialDirectory = projectRoot };
-                if (browse.ShowDialog(this) != true) return;
-                string relative = Path.GetRelativePath(projectRoot, browse.FolderName).Replace('\\', '/');
-                try
-                {
-                    input.Text = ProjectAssetPaths.Folder(relative);
-                }
-                catch (InvalidOperationException ex)
-                {
-                    new NoticeWindow("Project folder required", ex.Message) { Owner = this }.ShowDialog();
-                }
-            });
-            return input;
-        }
-        var icons = Field("Marker Icons Path", current.MarkerIcons);
-        var textures = Field("Trail Textures Path", current.TrailTextures);
-        var trails = Field("Trail File (.trl) Path", current.TrailFiles);
-        Label("Existing custom paths still render from XML even when they are outside the picker folder. Save the project to retain these settings.");
+        Label("Project assets");
+        Label("Import images and TRL files, insert trails, and choose default icon, texture, and trail folders in Project Assets.");
+        Action("Assets…",(_,_) => openAssets?.Invoke());
+        Label("Right-click folders in Assets to choose defaults for XML, docs, scripts, icons, textures and trail data.");
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap };
         Body.Children.Add(status);
         Action("Defaults", (_, _) =>
         {
             output.Text = "";
             includeDocs.IsChecked = true;
-            icons.Text = textures.Text = "TEXTURES";
-            trails.Text = "DATA";
+
+            foreach (var input in alternates) input.Text = "";
         });
         Action("Apply", (_, _) =>
         {
@@ -73,7 +63,11 @@ public sealed class ProjectSettingsWindow : PreviewDialog
                 string folder = output.Text.Trim();
                 if (folder.Length != 0 && !Path.IsPathFullyQualified(folder))
                     throw new InvalidOperationException("The .taco output location must be an absolute folder path, or blank to use EXPORT.");
-                Paths = new ProjectAssetPaths(icons.Text, textures.Text, trails.Text).Validated();
+                var imagePaths = currentPaths?.Invoke() ?? current;
+                Paths = imagePaths.Validated();
+                AlternateOutputs = alternates.Select(t => t.Text.Trim()).ToList();
+                if (AlternateOutputs.Any(p => p.Length > 0 && !Path.IsPathFullyQualified(p))) throw new InvalidOperationException("Alternate output locations must be absolute folder paths or blank.");
+                AlternateOutputs = AlternateOutputs.Select(p => p.Length == 0 ? "" : Path.GetFullPath(p)).ToList();
                 IncludeDocumentation = includeDocs.IsChecked == true;
                 OutputFolder = folder.Length == 0 ? "" : Path.GetFullPath(folder);
                 DialogResult = true;
@@ -82,26 +76,6 @@ public sealed class ProjectSettingsWindow : PreviewDialog
             {
                 status.Text = ex.Message;
             }
-        });
-        Action("Cancel", (_, _) => DialogResult = false);
-    }
-}
-
-public sealed class ImageDestinationWindow : PreviewDialog
-{
-    public string? Folder { get; private set; }
-    public ImageDestinationWindow(ProjectAssetPaths paths) : base("Import Textures/Icons", 500)
-    {
-        Label("Choose the destination for the selected images.");
-        Action("Marker icons · " + paths.MarkerIcons, (_, _) =>
-        {
-            Folder = paths.MarkerIcons;
-            DialogResult = true;
-        });
-        Action("Trail textures · " + paths.TrailTextures, (_, _) =>
-        {
-            Folder = paths.TrailTextures;
-            DialogResult = true;
         });
         Action("Cancel", (_, _) => DialogResult = false);
     }

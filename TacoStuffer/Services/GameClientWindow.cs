@@ -189,14 +189,46 @@ public static class NativeGameWindow
     public static nint OcclusionFor(bool gameSurface) => HostedGameOverlay ? 0 : EditorOcclusionWindow;
     public static bool HasCorrectOverlayBand(nint hwnd, bool gameSurface) => IsTopmost(hwnd) == (OcclusionFor(gameSurface) == 0);
 
-    public static bool PlaceOverlay(nint hwnd, nint above, int x, int y, int width, int height, bool show, bool gameSurface = false)
+    public static bool PlaceOverlay(nint hwnd, nint above, int x, int y, int width, int height, bool show, bool gameSurface = false, bool keepAnchor = false)
     {
+        // WPF popups live in separate HWNDs. Keep temporary UI above every
+        // render surface as well as the controls, including during telemetry ticks.
+        nint transient = 0, popupWindow = 0;
+        foreach (System.Windows.Interop.HwndSource source in System.Windows.PresentationSource.CurrentSources.OfType<System.Windows.Interop.HwndSource>())
+        {
+            if (source.Handle == hwnd || !IsWindowVisible(source.Handle)) continue;
+            bool popup = source.RootVisual?.GetType().Name == "PopupRoot";
+            bool modal = source.RootVisual is System.Windows.Window w && w.Owner != null && !w.Owner.IsEnabled;
+            if (!popup && !modal) continue;
+            SetWindowPos(source.Handle, new nint(-1), 0, 0, 0, 0, 0x0013);
+            transient = source.Handle;
+            if (popup) popupWindow = source.Handle;
+        }
+        // Native file/folder pickers are owned modal windows too, but do not
+        // appear in WPF's presentation sources. Protect the active picker.
+        nint foreground = GetForegroundWindow();
+        if (transient != 0 && foreground != hwnd && IsWindowVisible(foreground)
+            && System.Windows.Interop.HwndSource.FromHwnd(foreground) == null && GetWindow(foreground, 4) != 0)
+        {
+            GetWindowThreadProcessId(foreground, out uint process);
+            if (process == (uint)Environment.ProcessId)
+            {
+                SetWindowPos(foreground, new nint(-1), 0, 0, 0, 0, 0x0013);
+                transient = foreground;
+            }
+        }
+        if (popupWindow != 0)
+        {
+            SetWindowPos(popupWindow, new nint(-1), 0, 0, 0, 0, 0x0013);
+            transient = popupWindow;
+        }
+        if (transient != 0 && (!gameSurface && !keepAnchor || above == 0 || !IsWindowVisible(above))) above = transient;
         nint editor = OcclusionFor(gameSurface);
         nint after;
         if (editor != 0 && IsWindowVisible(editor))
         {
             if (IsTopmost(hwnd) && !SetWindowPos(hwnd, new nint(-2), 0, 0, 0, 0, 0x0013)) return false;
-            after = above != hwnd && above != 0 && IsWindowVisible(above) && !IsTopmost(above) ? above : editor;
+            after = above != hwnd && above != 0 && IsWindowVisible(above) && !IsTopmost(above) ? above : IsTopmost(editor) ? 0 : editor;
         }
         else
         {
@@ -210,6 +242,13 @@ public static class NativeGameWindow
     private struct MonitorInfo { public uint Size; public Rect Monitor, Work; public uint Flags; }
     [DllImport("user32.dll")] private static extern nint MonitorFromWindow(nint hwnd, uint flags);
     [DllImport("user32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)] private static extern bool GetMonitorInfoW(nint monitor, ref MonitorInfo info);
+    [DllImport("user32.dll")] private static extern nint MonitorFromRect(ref Rect rect, uint flags);
+    public static Rect MonitorWorkAreaAt(int x, int y, int width, int height, Rect fallback)
+    {
+        var bounds = new Rect { Left = x, Top = y, Right = (int)Math.Clamp((long)x + width, int.MinValue, int.MaxValue), Bottom = (int)Math.Clamp((long)y + height, int.MinValue, int.MaxValue) };
+        var info = new MonitorInfo { Size = (uint)Marshal.SizeOf<MonitorInfo>() };
+        return GetMonitorInfoW(MonitorFromRect(ref bounds, 2), ref info) ? info.Work : fallback;
+    }
     public static Rect MonitorWorkArea(nint hwnd, Rect fallback)
     {
         var info = new MonitorInfo { Size = (uint)Marshal.SizeOf<MonitorInfo>() };
@@ -231,6 +270,9 @@ public static class NativeGameWindow
     [DllImport("user32.dll")]
     public static extern bool ReleaseCapture();
 
+    public static bool OtherButtonDown => (GetAsyncKeyState(GetSystemMetrics(23) != 0 ? 1 : 2) & 0x8000) != 0;
+    public static bool EnterDown => (GetAsyncKeyState(0x0D) & 0x8000) != 0;
+    public static bool EscapeDown => (GetAsyncKeyState(0x1B) & 0x8000) != 0;
     public static bool DeleteDown => (GetAsyncKeyState(0x2E) & 0x8000) != 0;
     public static bool ShiftDown => (GetAsyncKeyState(0x10) & 0x8000) != 0;
     public static bool ControlDown => (GetAsyncKeyState(0x11) & 0x8000) != 0;
@@ -270,6 +312,33 @@ public static class NativeGameWindow
 
     public static bool IsGameRoot(GameClientWindow game, nint root) => game.Handle != 0 && root != 0
         && (root == game.Handle || root == GetAncestor(game.Handle, 2));
+
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(nint hwnd);
+    [DllImport("user32.dll")] private static extern nint SetFocus(nint hwnd);
+    [DllImport("user32.dll")] private static extern bool AttachThreadInput(uint first, uint second, bool attach);
+    [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
+
+    // Called only after a deliberate toolbar interaction, never to steal focus
+    // on mouse hover. Hosted games need keyboard focus on the render child too.
+    public static bool FocusGameInput(GameClientWindow game)
+    {
+        if (game.Handle == 0 || !IsWindow(game.Handle) || !IsWindowVisible(game.Handle)) return false;
+        GetWindowThreadProcessId(game.Handle, out uint process);
+        if (process != (uint)game.ProcessId) return false;
+        nint foreground = GetForegroundWindow();
+        GetWindowThreadProcessId(foreground, out uint foregroundProcess);
+        if (!IsGameRoot(game, foreground) && foregroundProcess != (uint)Environment.ProcessId) return false;
+        nint root = GetAncestor(game.Handle, 2);
+        if (root == 0 || (foreground != root && !SetForegroundWindow(root))) return false;
+        uint ownThread = GetCurrentThreadId(), gameThread = GetWindowThreadProcessId(game.Handle, out _);
+        bool attached = ownThread != gameThread && AttachThreadInput(ownThread, gameThread, true);
+        try
+        {
+            if (ownThread == gameThread || attached) SetFocus(game.Handle);
+        }
+        finally { if (attached) AttachThreadInput(ownThread, gameThread, false); }
+        return IsGameInputActive(game);
+    }
 
     public static bool IsGameInputActive(GameClientWindow game)
     {

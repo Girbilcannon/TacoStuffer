@@ -278,6 +278,11 @@ if (OperatingSystem.IsWindows())
 }
 var frame = MumbleSnapshot.Decode(mumbleBytes)!;
 Check(frame != null && frame.ProcessId == 1234 && frame.MapId == 15 && frame.CharacterName == "Test Character", "Decode GW2 UTF-16 identity and extended context despite declared length 48");
+var mountedBytes = MumbleFrame();
+System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(mountedBytes.AsSpan(1144, 4), 789);
+mountedBytes[1192] = 8;
+var mountedFrame = MumbleSnapshot.Decode(mountedBytes)!;
+Check(mountedFrame.ShardId == 789 && mountedFrame.MountIndex == 8, "Extended Mumble shard and mount offsets");
 Check(frame.AvatarPosition.X == 1.25f && frame.AvatarPosition.Z == -3.75f && frame.CameraPosition.X == 4, "Position offsets must match Windows MumbleLink layout");
 Check(MumbleSnapshot.Decode(mumbleBytes.AsSpan(0, 1195)) == null, "Short memory frame rejected");
 var mismatch = MumbleFrame();
@@ -578,7 +583,7 @@ gpuSegment.Add(new(1, 2, 24));
 gpuSegment.Points[1].Id = 15;
 gpuSegment.NextPoint = 16;
 var gpuVertices = GpuTrailGeometry.Build(gpuRoute, gpuSegment);
-Check(System.Runtime.InteropServices.Marshal.SizeOf<TrailGpuVertex>() == 36, "GPU input stride includes independent world and projected-map distances");
+Check(System.Runtime.InteropServices.Marshal.SizeOf<TrailGpuVertex>() == 48, "GPU input stride includes independent world and projected-map distances");
 Check(System.Runtime.InteropServices.Marshal.OffsetOf<TrailGpuVertex>(nameof(TrailGpuVertex.Uv)).ToInt32() == 12 && System.Runtime.InteropServices.Marshal.OffsetOf<TrailGpuVertex>(nameof(TrailGpuVertex.Center)).ToInt32() == 20, "GPU input offsets agree with the native layout");
 Check(gpuVertices.Length == 4 && Math.Abs(gpuVertices[2].Uv.Y + 21) < .0001f, "A 1-to-15 point gap produces a full-length ribbon with distance-based UV repetition");
 Check(Math.Abs(System.Numerics.Vector3.Distance(gpuVertices[0].Position, gpuVertices[1].Position) - 1.016f) < .0001f, "GPU ribbon width matches TacO's meter conversion");
@@ -934,7 +939,7 @@ finally
 }
 var embeddedCatalog = new AttributeCatalog();
 embeddedCatalog.Reload(null);
-int embeddedDefinitionCount = 17;
+int embeddedDefinitionCount = 32;
 Check(embeddedCatalog.Errors.Count == 0 && embeddedCatalog.Groups.Count == embeddedDefinitionCount - 2, "All compiled built-ins load without files or manifest resources");
 Check(embeddedCatalog.Groups.Single(g => g.Key == "iconFile").Members.Any(m => m.Name == "iconSize")
     && embeddedCatalog.Groups.Single(g => g.Key == "texture").Members.Any(m => m.Name == "trailScale"), "Compiled definitions preserve Icon and Texture attribute bundles");
@@ -1051,7 +1056,7 @@ finally { System.IO.File.Delete(interactionPrefsPath); }
 var infoGroup = embeddedCatalog.Groups.Single(g => g.Key == "info");
 var copyGroup = embeddedCatalog.Groups.Single(g => g.Key == "copy");
 Check(infoGroup.Members.Select(m => m.Name).SequenceEqual(new[] { "info", "infoRange" })
-    && copyGroup.Members.Select(m => m.Name).SequenceEqual(new[] { "copy", "copy-message", "triggerRange", "autoTrigger" }), "Add Attributes exposes the exact Info and Copy bundles without adding XML settings");
+    && copyGroup.Members.Select(m => m.Name).SequenceEqual(new[] { "copy", "copy-message" }), "Info and Copy bundles do not own the independent trigger settings");
 var lowercaseRange = XElement.Parse("<POI inforange='4'/>");
 AttributeRules.Apply([lowercaseRange], new Dictionary<string, string?> { ["infoRange"] = "8" }, (_, _) => true);
 Check(lowercaseRange.Attributes().Count() == 1 && (string?)lowercaseRange.Attribute("inforange") == "8", "Editing lowercase inforange does not introduce a second case alias");
@@ -1142,4 +1147,142 @@ try
 }
 finally { System.IO.Directory.Delete(managedRoot,true); }
 
+// Asset operations preflight the entire selection and preserve source formatting.
+string assetRoot = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AssetBrowser_" + Guid.NewGuid().ToString("N"));
+System.IO.Directory.CreateDirectory(assetRoot);
+try
+{
+    foreach (string folder in new[] { "TEXTURES", "icons", "other" }) System.IO.Directory.CreateDirectory(System.IO.Path.Combine(assetRoot, folder));
+    void ImageFile(string path, string text) => System.IO.File.WriteAllText(System.IO.Path.Combine(assetRoot, path), text);
+    ImageFile("TEXTURES/a.png", "a"); ImageFile("TEXTURES/b.png", "b"); ImageFile("icons/b.png", "existing");
+    bool collision = false;
+    try { AssetLibrary.Move(assetRoot, new[] { "TEXTURES/a.png", "TEXTURES/b.png" }, "icons"); }
+    catch (System.IO.IOException) { collision = true; }
+    Check(collision && System.IO.File.Exists(System.IO.Path.Combine(assetRoot, "TEXTURES/a.png")) && !System.IO.File.Exists(System.IO.Path.Combine(assetRoot, "icons/a.png")), "Multi-asset collision cancels the entire move before mutation");
+    var changes = AssetLibrary.Move(assetRoot, new[] { "TEXTURES/a.png", "TEXTURES/b.png" }, "other");
+    Check(changes.Count == 2 && System.IO.File.ReadAllText(System.IO.Path.Combine(assetRoot, "other/a.png")) == "a" && !System.IO.File.Exists(System.IO.Path.Combine(assetRoot, "TEXTURES/a.png")), "Moves preserve bytes and remove old paths");
+    string before = "<OverlayData>\n<!-- iconFile='TEXTURES/a.png' -->\n<MarkerCategory name='pack' iconFile = 'TEXTURES/a.png'/><POIs><Trail texture=\"TEXTURES/b.png\"/></POIs></OverlayData>";
+    string after = AssetLibrary.RewriteReferences(before, changes);
+    Check(after.Contains("<!-- iconFile='TEXTURES/a.png' -->") && after.Contains("iconFile = 'other/a.png'") && after.Contains("texture=\"other/b.png\""), "Reference rewriting handles category inheritance, both quote styles and trails while preserving comments and formatting");
+    var assetSnapshot = new ProjectSnapshot("Assets", "", [new("pack.xml", after)], new(), ImportedAssets: changes.Values.ToList(), AssetPaths: new ProjectAssetPaths("icons", "other", "DATA"));
+    string manifest = System.IO.Path.Combine(assetRoot, "assets.cilantro");
+    ProjectStore.Save(manifest, assetSnapshot);
+    var loadedAssets = ProjectStore.Load(manifest);
+    Check(loadedAssets.AssetPaths == assetSnapshot.AssetPaths && loadedAssets.ImportedAssets!.SequenceEqual(changes.Values), "Default image folders and moved imported paths persist across save/reopen");
+    string assetPack = System.IO.Path.Combine(assetRoot, "assets.taco");
+    TestPackBuilder.Build(assetPack, new[] { ("pack.xml", after) }, assetRoot, importedAssets: changes.Values.ToList(), assetPaths: loadedAssets.AssetPaths);
+    using (var packedAssets = System.IO.Compression.ZipFile.OpenRead(assetPack))
+        Check(packedAssets.GetEntry("other/a.png") != null && packedAssets.GetEntry("other/b.png") != null && packedAssets.GetEntry("TEXTURES/a.png") == null && !packedAssets.Entries.Any(e => e.FullName.Contains("placeholder")), "Moved assets compile at their new paths without stale entries or missing-reference placeholders");
+    Check(AssetLibrary.Move(assetRoot, new[] { "other/a.png" }, "other").Count == 0, "Moving within the same folder is a no-op");
+    bool traversal = false;
+    try { AssetLibrary.Resolve(assetRoot, "../escape.png"); } catch (InvalidOperationException) { traversal = true; }
+    Check(traversal, "Asset paths cannot escape the project");
+    if (!OperatingSystem.IsWindows())
+    {
+        System.IO.Directory.CreateSymbolicLink(System.IO.Path.Combine(assetRoot, "linked"), System.IO.Path.GetTempPath());
+        bool linked = false;
+        try { AssetLibrary.Resolve(assetRoot, "linked/outside.png"); } catch (InvalidOperationException) { linked = true; }
+        Check(linked, "Asset links cannot bypass project containment");
+    }
+    var journal = new HistoryJournal<string>(x => x); journal.Reset(before); journal.Commit(before + "\n", "XML edit");
+    journal.Transform(value => AssetLibrary.RewriteReferences(value, changes));
+    Check(journal.Undo() == after && journal.Redo() == after + "\n", "Undo and redo retain moved asset references without losing unrelated source edits");
+}
+finally { System.IO.Directory.Delete(assetRoot, true); }
+
+// Comment insertion preserves physical lines and avoids multiline XML tokens.
+foreach (string newline in new[] { "\n", "\r\n" })
+{
+    string commentSource = "<OverlayData>" + newline + "  <POI GUID=\"x\"/>" + newline + "</OverlayData>";
+    int commentClick = commentSource.IndexOf("GUID", StringComparison.Ordinal);
+    var beforeComment = XmlComments.Insert(commentSource, commentClick, false);
+    var afterComment = XmlComments.Insert(commentSource, commentClick, true);
+    Check(beforeComment.Source.Contains("  <!-- Insert Comment Here -->" + newline + "  <POI"), "Comment Before keeps indentation and newline style");
+    Check(afterComment.Source.Contains("GUID=\"x\"/>" + newline + "  <!-- Insert Comment Here -->"), "Comment After follows the clicked physical source line");
+    Check(beforeComment.Source.Substring(beforeComment.CommentOffset, XmlComments.Placeholder.Length) == XmlComments.Placeholder, "Inserted placeholder has an exact editable source offset");
+    XDocument.Parse(beforeComment.Source); XDocument.Parse(afterComment.Source);
+}
+foreach (string multi in new[] { "<POI\n  GUID='x'\n/>", "<!-- existing\ncomment -->", "<![CDATA[first\nsecond]]>" })
+{
+    string docWithToken = "<OverlayData>\n" + multi + "\n</OverlayData>";
+    int tokenClick = docWithToken.IndexOf('\n', docWithToken.IndexOf('\n') + 1) + 1;
+    XDocument.Parse(XmlComments.Insert(docWithToken, tokenClick, false).Source);
+    XDocument.Parse(XmlComments.Insert(docWithToken, tokenClick, true).Source);
+}
+XDocument.Parse(XmlComments.Insert("<?xml version='1.0'?>\n<OverlayData/>", 0, false).Source);
+XDocument.Parse(XmlComments.Insert("<OverlayData/>", 2, true).Source);
+Check(new EditorPreferences().EnableOverlayMinimizeGlow, "Minimized overlay glow is enabled for fresh preferences");
+var noGlow = new EditorPreferences { EnableOverlayMinimizeGlow = false };
+Check(!noGlow.Copy().EnableOverlayMinimizeGlow, "Preferences preview copies retain a disabled overlay glow");
+noGlow.ResetDefaults(); Check(noGlow.EnableOverlayMinimizeGlow, "Preferences Defaults restores the overlay glow");
+// Folder hierarchy operations preserve subtrees and never recreate missing defaults.
+string folderRoot = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AssetFolders_" + Guid.NewGuid().ToString("N"));
+System.IO.Directory.CreateDirectory(folderRoot);
+try
+{
+    System.IO.Directory.CreateDirectory(System.IO.Path.Combine(folderRoot, "icons/bugs/empty"));
+    System.IO.Directory.CreateDirectory(System.IO.Path.Combine(folderRoot, "textures"));
+    System.IO.File.WriteAllText(System.IO.Path.Combine(folderRoot, "icons/bugs/beetle.png"), "keep these bytes");
+    bool cycleBlocked = false;
+    try { AssetFolders.Move(folderRoot, "icons", "icons/bugs"); } catch (InvalidOperationException) { cycleBlocked = true; }
+    Check(cycleBlocked && System.IO.File.Exists(System.IO.Path.Combine(folderRoot, "icons/bugs/beetle.png")), "Folder cycles are refused before any mutation");
+    System.IO.Directory.CreateDirectory(System.IO.Path.Combine(folderRoot, "textures/icons"));
+    bool folderCollision = false;
+    try { AssetFolders.Move(folderRoot, "icons", "textures"); } catch (System.IO.IOException) { folderCollision = true; }
+    Check(folderCollision && System.IO.Directory.Exists(System.IO.Path.Combine(folderRoot, "icons/bugs/empty")), "Folder collisions never merge or discard source children");
+    System.IO.Directory.Delete(System.IO.Path.Combine(folderRoot, "textures/icons"));
+    var folderMove = AssetFolders.Move(folderRoot, "icons", "textures");
+    Check(folderMove.Destination == "textures/icons" && folderMove.Files["icons/bugs/beetle.png"] == "textures/icons/bugs/beetle.png"
+        && System.IO.File.ReadAllText(System.IO.Path.Combine(folderRoot, "textures/icons/bugs/beetle.png")) == "keep these bytes"
+        && System.IO.Directory.Exists(System.IO.Path.Combine(folderRoot, "textures/icons/bugs/empty")) && !System.IO.Directory.Exists(System.IO.Path.Combine(folderRoot, "icons")), "Folder moves retain all bytes, nested paths and empty subfolders");
+    string folderXml = "<OverlayData><MarkerCategory name='pack' iconFile='icons/bugs/beetle.png'/><POIs><Trail texture='icons/bugs/beetle.png'/></POIs></OverlayData>";
+    string movedFolderXml = AssetLibrary.RewriteReferences(folderXml, folderMove.Files);
+    Check(XDocument.Parse(movedFolderXml).Descendants().Attributes().Where(a => a.Name.LocalName is "iconFile" or "texture").All(a => a.Value == "textures/icons/bugs/beetle.png"), "Folder path maps retarget category icon and trail texture references");
+    Check(AssetFolders.Relocate("icons/bugs", "icons", "textures/icons") == "textures/icons/bugs"
+        && AssetFolders.Relocate("iconsExtra", "icons", "textures/icons") == "iconsExtra", "Default-folder rebasing respects path boundaries");
+    bool rootDeletion = false;
+    try { AssetFolders.Delete(folderRoot, ".", _ => throw new Exception("Root deletion invoked")); } catch (InvalidOperationException) { rootDeletion = true; }
+    Check(rootDeletion, "Project root deletion is always blocked");
+    string recycle = System.IO.Path.Combine(folderRoot, "recycled");
+    AssetFolders.Delete(folderRoot, "textures/icons", path => System.IO.Directory.Move(path, recycle));
+    var defaultsAfterDeletion = AssetFolders.ExistingDefaults(folderRoot, new ProjectAssetPaths("textures/icons/bugs", "textures", "absent/data"));
+    Check(defaultsAfterDeletion.MarkerIcons == "textures/icons/bugs" && defaultsAfterDeletion.TrailTextures == "textures" && defaultsAfterDeletion.TrailFiles == "absent/data"
+        && !System.IO.Directory.Exists(System.IO.Path.Combine(folderRoot, "textures/icons")) && !System.IO.Directory.Exists(System.IO.Path.Combine(folderRoot, "absent")), "Deleted/missing defaults retain their configured location without recreating ghost folders");
+    Check(System.IO.File.ReadAllText(System.IO.Path.Combine(recycle, "bugs/beetle.png")) == "keep these bytes", "Deletion delegates to the recycling service with the intact subtree");
+    if (!OperatingSystem.IsWindows())
+    {
+        System.IO.Directory.CreateSymbolicLink(System.IO.Path.Combine(folderRoot, "textures/link"), System.IO.Path.GetTempPath());
+        bool rejectLinkedFolder = false;
+        try { AssetFolders.Move(folderRoot, "textures", "."); } catch (InvalidOperationException) { rejectLinkedFolder = true; }
+        Check(rejectLinkedFolder, "Whole-folder preflight rejects linked descendants");
+    }
+}
+finally { System.IO.Directory.Delete(folderRoot, true); }
+
+Pathing014Checks.Run();
+Pathing015Checks.Run();
+AttributePane016Checks.Run();
+AttributeRequirement017Checks.Run();
+ResetCheckpoint018Checks.Run();
+Checkpoint019Checks.Run();
+Outliner020Checks.Run();
+Rename021Checks.Run();
+TrailAssets022Checks.Run();
+CheckpointPane023Checks.Run();
 Console.WriteLine("Core editing, export, GPU geometry, trail picking, history, preferences, interactions and search checks passed.");
+
+AssetManagement025Checks.Run();
+
+Launch100Checks.Run();
+
+Namespace103Checks.Run();
+
+Overlay104Checks.Run();
+
+Overlay105Checks.Run();
+
+Overlay106Checks.Run();
+
+Attribute107Checks.Run();
+
+Attribute107BundleChecks.Run();

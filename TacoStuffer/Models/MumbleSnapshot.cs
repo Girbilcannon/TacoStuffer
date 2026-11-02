@@ -9,6 +9,8 @@ public sealed record MumbleSnapshot(uint Tick, uint ProcessId, uint MapId, uint 
     string CharacterName, Vector3 AvatarPosition, Vector3 CameraPosition, Vector3 CameraFront, Vector3 CameraTop, float Fov)
 {
     // Windows UTF-16 layout, checked against the supplied TacO MumbleLink.h.
+    public uint ShardId { get; init; }
+    public byte MountIndex { get; init; }
     public CompassTelemetry? Compass { get; init; }
     public const int FrameSize = 1364;
     // Allocate the full Windows LinkedMem layout, including the UTF-16 description.
@@ -36,6 +38,7 @@ public sealed record MumbleSnapshot(uint Tick, uint ProcessId, uint MapId, uint 
             float fov = root.TryGetProperty("fov", out var f) && f.ValueKind == JsonValueKind.Number && f.TryGetSingle(out float value) && float.IsFinite(value) && value > 0.1f && value < 3 ? value : CameraProjection.DefaultFov;
             return new(U32(data, 4), pid, map, U32(data, 1140), U32(data, 1156), name.GetString()!, avatar, camera, front, top, fov)
             {
+                ShardId = U32(data, 1144), MountIndex = data[1192],
                 Compass = new CompassTelemetry(BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(1160, 2)), BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(1162, 2)), Float(data, 1164), new(Float(data, 1168), Float(data, 1172)), new(Float(data, 1176), Float(data, 1180)), Float(data, 1184), root.TryGetProperty("uisz", out var ui) && ui.ValueKind == JsonValueKind.Number && ui.TryGetInt32(out int size) ? size : 1)
             };
         }

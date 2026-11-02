@@ -1,0 +1,3 @@
+<AttributeGroup version="1" key="cpFinish" displayName="Checkpoint Finish Line" appliesTo="POI,Trail,MarkerCategory">
+  <Attribute name="cpFinish" default="true" type="bool" optional="false" />
+</AttributeGroup>

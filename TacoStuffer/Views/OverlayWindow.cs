@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using TacoStuffer.Models;
 using TacoStuffer.Services;
 
@@ -10,10 +11,49 @@ namespace TacoStuffer.Views;
 
 public sealed record OverlayAsset(string DocumentName, string Key, string Label, string Kind, string Category, string MapId);
 
-public sealed record OverlayCategory(string DocumentName, string Path, bool IsSeparator = false, bool HasCopy = false);
+public sealed record OverlayCategory(string DocumentName, string Path, bool IsSeparator = false, bool HasCopy = false)
+{
+    public string DisplayName { get; init; } = "";
+    public string TipDescription { get; init; } = "";
+}
 
 public sealed class OverlayWindow : PreviewDialog
 {
+    public event Action? ToolbarRequested;
+    public event Action? ToolbarStateChanged;
+    public void SetCheckpointTest(bool active) => ToolbarStateChanged?.Invoke();
+    public void SetInteractionTests(bool enabled)
+    {
+        InteractionTestsEnabled = enabled;
+        InteractionTestModeChanged?.Invoke(enabled);
+        ToolbarStateChanged?.Invoke();
+    }
+    public IReadOnlyDictionary<string, bool> ToolbarButtons() => new Dictionary<string, bool>
+    {
+        ["start"] = startTrail.IsEnabled && !resumable,
+        ["pause"] = pauseTrail.IsEnabled && !paused,
+        ["continue"] = (pauseTrail.IsEnabled && paused) || (startTrail.IsEnabled && resumable),
+        ["segment"] = newSegment.IsEnabled,
+        ["stop"] = stopTrail.IsEnabled,
+        ["marker"] = placeMarker.IsEnabled,
+        ["reposition"] = reposition.IsEnabled
+    };
+    public void InvokeToolbarAction(string command)
+    {
+        if (!ToolbarButtons().GetValueOrDefault(command)) return;
+        var button = command switch
+        {
+            "start" => startTrail,
+            "pause" => pauseTrail,
+            "continue" => paused ? pauseTrail : startTrail,
+            "segment" => newSegment,
+            "stop" => stopTrail,
+            "marker" => placeMarker,
+            "reposition" => reposition,
+            _ => null
+        };
+        button?.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+    }
     private readonly TextBlock telemetry = new() { TextWrapping = TextWrapping.Wrap, Foreground = Brushes.LightGreen, Margin = new Thickness(0, 0, 0, 12) };
     private readonly ComboBox markerCategories = new();
     private readonly ComboBox markerDocuments = new();
@@ -85,9 +125,10 @@ public sealed class OverlayWindow : PreviewDialog
     private GameClientWindow client;
     private bool freePositionInitialized;
     private bool compact;
+    private bool minimizeGlowEnabled = true;
+    private SolidColorBrush? restoreBrush;
     private bool hostedMode;
     private bool presentationAllowed;
-    private nint tooltipHandle;
     public bool IsHostedMinimized => hostedMode && compact;
     // Panel visibility and overlay-session activity are separate in Play in App.
     public bool IsRenderingActive => presentationAllowed && (IsVisible || IsHostedMinimized);
@@ -95,6 +136,7 @@ public sealed class OverlayWindow : PreviewDialog
     public void RestoreControls() => SetCompact(false);
     private object? expandedContent;
     private double expandedWidth;
+    private double expandedHeight;
     private NativeGameWindow.Rect expandedBounds;
     private bool rebuildingAssets;
     public int BoundProcessId { get; }
@@ -127,26 +169,34 @@ public sealed class OverlayWindow : PreviewDialog
         {
             case "interact": MarkerInteractionRequested?.Invoke(); break;
             case "category":
-            string? xml = (tabs.SelectedIndex == 1 ? trailDocuments : markerDocuments).SelectedItem as string;
-            string? path = (tabs.SelectedIndex == 1 ? trailCategories : markerCategories).SelectedItem as string;
-            if (xml != null && path != null) CategoryRequested?.Invoke(xml, path);
-            break;
-            case "marker": Click(placeMarker);
-            break;
-            case "reposition": Click(reposition);
-            break;
-            case "trail": Click(newTrail);
-            break;
-            case "start": if (!recording) Click(startTrail);
-            break;
-            case "pause": if (recording && !paused) Click(pauseTrail);
-            break;
-            case "continue": if (recording && paused) Click(pauseTrail);
-            break;
-            case "segment": Click(newSegment);
-            break;
-            case "stop": Click(stopTrail);
-            break;
+                string? xml = (tabs.SelectedIndex == 1 ? trailDocuments : markerDocuments).SelectedItem as string;
+                string? path = (tabs.SelectedIndex == 1 ? trailCategories : markerCategories).SelectedItem as string;
+                if (xml != null && path != null) CategoryRequested?.Invoke(xml, path);
+                break;
+            case "marker":
+                Click(placeMarker);
+                break;
+            case "reposition":
+                Click(reposition);
+                break;
+            case "trail":
+                Click(newTrail);
+                break;
+            case "start":
+                if (!recording) Click(startTrail);
+                break;
+            case "pause":
+                if (recording && !paused) Click(pauseTrail);
+                break;
+            case "continue":
+                if (recording && paused) Click(pauseTrail);
+                break;
+            case "segment":
+                Click(newSegment);
+                break;
+            case "stop":
+                Click(stopTrail);
+                break;
         }
     }
 
@@ -161,28 +211,28 @@ public sealed class OverlayWindow : PreviewDialog
         ShowActivated = false;
         WindowStartupLocation = WindowStartupLocation.Manual;
         Body.Margin = new Thickness(12);
+        SizeToContent = SizeToContent.Manual;
+        Width = 750; Height = 720;
+        MinWidth = 550; MinHeight = 420;
+        ResizeMode = ResizeMode.CanResizeWithGrip;
+        System.Windows.Shell.WindowChrome.SetWindowChrome(this, new System.Windows.Shell.WindowChrome
+        {
+            CaptionHeight = 0,
+            ResizeBorderThickness = new Thickness(6),
+            GlassFrameThickness = new Thickness(0),
+            CornerRadius = new CornerRadius(0)
+        });
         Body.Children.Add(telemetry);
-        var interactionTip = new ToolTip { Content = new TextBlock {
-            Text = "Test autoTrigger clipboard copying when entering a marker's trigger range, and copy actions on category/separator labels. Info popups are controlled separately in Preferences.",
-            TextWrapping = TextWrapping.Wrap, MaxWidth = 330 } };
-        interactionTip.Opened += (_, _) =>
-        {
-            tooltipHandle = (PresentationSource.FromVisual(interactionTip) as HwndSource)?.Handle ?? 0;
-            if (tooltipHandle != 0) NativeGameWindow.SetWindowPos(tooltipHandle, new nint(-1), 0, 0, 0, 0, 0x0013);
-        };
-        interactionTip.Closed += (_, _) => tooltipHandle = 0;
-        var interactionTests = new CheckBox { Content = "Test marker interactions", IsChecked = false,
-            ToolTip = interactionTip, Margin = new Thickness(0, 0, 0, 10) };
-        interactionTests.Click += (_, _) =>
-        {
-            InteractionTestsEnabled = interactionTests.IsChecked == true;
-            InteractionTestModeChanged?.Invoke(InteractionTestsEnabled);
-        };
-        Body.Children.Add(interactionTests);
-        var grid = new Grid { Height = 460 };
+        var toolbarButton = new Button { Content = "Open Toolbar", HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 10) };
+        toolbarButton.Click += (_, _) => ToolbarRequested?.Invoke();
+        Body.Children.Add(toolbarButton);
+        var grid = new Grid();
         grid.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new() { Width = new GridLength(12) });
-        grid.ColumnDefinitions.Add(new() { Width = new GridLength(245) });
+        grid.ColumnDefinitions.Add(new() { Width = new GridLength(8) });
+        var divider = new GridSplitter { Width = 6, HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch };
+        Grid.SetColumn(divider, 1); grid.Children.Add(divider);
+        ScrollViewer.SetHorizontalScrollBarVisibility(assetsTree, ScrollBarVisibility.Auto);
+        grid.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
         var markers = new StackPanel { Margin = new Thickness(12) };
         Caption(markers, "XML file");
         markers.Children.Add(markerDocuments);
@@ -195,12 +245,27 @@ public sealed class OverlayWindow : PreviewDialog
             if (assetsTree.SelectedItem is TreeViewItem { Tag: OverlayAsset a }) RepositionRequested?.Invoke(a);
         };
         markers.Children.Add(recordingStatus);
-        var categoryTemplate = new DataTemplate();
-        var categoryText = new FrameworkElementFactory(typeof(TextBlock));
-        categoryText.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding { Converter = new LeafCategoryConverter() });
-        categoryText.SetBinding(TextBlock.ToolTipProperty, new System.Windows.Data.Binding());
-        categoryTemplate.VisualTree = categoryText;
-        markerCategories.ItemTemplate = trailCategories.ItemTemplate = categoryTemplate;
+        void Template(ComboBox box, ComboBox documents)
+        {
+            var template = new DataTemplate();
+            var text = new FrameworkElementFactory(typeof(TextBlock));
+            text.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding
+            {
+                Converter = new CategoryTextConverter(path =>
+            {
+                var target = targets.FirstOrDefault(t => t.DocumentName == documents.SelectedItem as string && t.Path == path);
+                string label = !string.IsNullOrWhiteSpace(target?.DisplayName) ? target.DisplayName : path[(path.LastIndexOf('.') + 1)..];
+                return new string(' ', path.Count(c => c == '.') * 3) + label;
+            })
+            });
+            text.SetBinding(TextBlock.ToolTipProperty, new System.Windows.Data.Binding
+            {
+                Converter = new CategoryTextConverter(path =>
+                path + "\n" + (targets.FirstOrDefault(t => t.DocumentName == documents.SelectedItem as string && t.Path == path)?.TipDescription ?? ""))
+            });
+            template.VisualTree = text; box.ItemTemplate = template;
+        }
+        Template(markerCategories, markerDocuments); Template(trailCategories, trailDocuments);
         markerDocuments.SelectionChanged += (_, _) =>
         {
             if (!updatingTargets) UpdateCategories();
@@ -213,7 +278,7 @@ public sealed class OverlayWindow : PreviewDialog
         {
             if (placeMarker.IsEnabled && markerDocuments.SelectedItem is string xml && markerCategories.SelectedItem is string path) MarkerRequested?.Invoke(xml, path);
         };
-        tabs.Items.Add(new TabItem { Header = "Markers", Content = markers });
+        tabs.Items.Add(new TabItem { Header = "Markers", Content = new ScrollViewer { Content = markers, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } });
         var trailPanel = new DockPanel { Margin = new Thickness(12) };
         var smoothnessPanel = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
         smoothnessLabel.Foreground = (Brush)FindResource("AccentBrush");
@@ -257,7 +322,16 @@ public sealed class OverlayWindow : PreviewDialog
         {
             if (e.Source == tabs) RebuildAssets();
         };
-        grid.Children.Add(tabs);
+        var targetPanel = new DockPanel();
+        var targetHint = new TextBlock
+        {
+            Text = "Double-clicking a category to the right will update the Target Selection",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = (Brush)FindResource("MutedBrush"),
+            Margin = new Thickness(12, 10, 12, 6)
+        };
+        DockPanel.SetDock(targetHint, Dock.Bottom); targetPanel.Children.Add(targetHint); targetPanel.Children.Add(tabs);
+        grid.Children.Add(targetPanel);
         var sidebar = new DockPanel();
         Grid.SetColumn(sidebar, 2);
         var heading = new TextBlock { Text = "RECORDED ASSETS", Foreground = (Brush)FindResource("AccentBrush"), FontWeight = FontWeights.SemiBold, Margin = new Thickness(10, 6, 0, 10) };
@@ -276,7 +350,18 @@ public sealed class OverlayWindow : PreviewDialog
         sidebar.Children.Add(empty);
         sidebar.Children.Add(assetsTree);
         grid.Children.Add(sidebar);
-        Body.Children.Add(grid);
+        // Let the content fill the actual client area instead of subtracting a
+        // guessed caption/telemetry height, which left a fixed blank bottom strip.
+        Body.Children.Clear();
+        var workspace = new Grid { Margin = new Thickness(12) };
+        workspace.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        workspace.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        workspace.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
+        workspace.Children.Add(telemetry); Grid.SetRow(toolbarButton, 1); workspace.Children.Add(toolbarButton);
+        Grid.SetRow(grid, 2); workspace.Children.Add(grid);
+        var shell = (DockPanel)((Border)Content).Child; shell.Children.RemoveAt(1); shell.Children.Add(workspace);
+        IsVisibleChanged += (_, _) => UpdateMinimizeGlow();
+        Closed += (_, _) => StopMinimizeGlow();
 
         assetsTree.SelectedItemChanged += (_, e) =>
         {
@@ -287,27 +372,17 @@ public sealed class OverlayWindow : PreviewDialog
         // including handled events, and resolve the clicked row rather than the
         // previously selected row (which can belong to another XML).
         assetsTree.AddHandler(Mouse.PreviewMouseDownEvent, new MouseButtonEventHandler(SelectClickedCategory), true);
-        SourceInitialized += (_, _) =>
-        {
-            NativeGameWindow.DisableActivation(Handle);
-            HwndSource.FromHwnd(Handle)?.AddHook(NoActivate);
-        };
         var minimize = new Button { Content = "—", ToolTip = "Minimize overlay controls", Padding = new Thickness(12, 5, 12, 5), Margin = new Thickness(5) };
         minimize.Click += (_, _) => SetCompact(true);
         DockPanel.SetDock(minimize, Dock.Right);
         CaptionBar.Children.Insert(0, minimize);
     }
 
-    private static nint NoActivate(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
+    private string CategoryLabel(string xml, string path)
     {
-        if (message == 0x21)
-        {
-            handled = true;
-            return 3;
-        } // WM_MOUSEACTIVATE / MA_NOACTIVATE
-        return 0;
+        string? label = targets.FirstOrDefault(t => t.DocumentName == xml && t.Path == path)?.DisplayName;
+        return string.IsNullOrWhiteSpace(label) ? path[(path.LastIndexOf('.') + 1)..] : label;
     }
-
     private static void Caption(Panel panel, string text) => panel.Children.Add(new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 8) });
 
     private static void Placeholder(Panel panel, string text) => panel.Children.Add(new Button { Content = text, IsEnabled = false, ToolTip = "Recording is not implemented yet", Margin = new Thickness(0, 8, 6, 0) });
@@ -342,6 +417,7 @@ public sealed class OverlayWindow : PreviewDialog
 
     public void SetTrailState(long? trail, long? segment, bool hasPoints, bool running, bool isPaused, bool onMap)
     {
+        if (activeTrail == trail && recording == running && paused == isPaused && resumable == hasPoints && sameMap == onMap) return;
         activeTrail = trail;
         recording = running;
         paused = isPaused;
@@ -394,6 +470,7 @@ public sealed class OverlayWindow : PreviewDialog
         pauseTrail.Content = paused ? "Continue Trail" : "Pause";
         newSegment.IsEnabled = canRecord && recording && paused && sameMap;
         stopTrail.IsEnabled = recording;
+        ToolbarStateChanged?.Invoke();
     }
 
     public void SetTarget(string xml, string? path)
@@ -545,12 +622,12 @@ public sealed class OverlayWindow : PreviewDialog
         var changed = new HashSet<TrailPointRef>(paintedPoints);
         changed.SymmetricExceptWith(selectedPoints);
         foreach (var point in changed)
-        if (pointLabels.TryGetValue(point, out var label))
-        {
-            bool selected = selectedPoints.Contains(point);
-            label.Background = selected ? PointSelectionBrush : Brushes.Transparent;
-            label.FontWeight = selected ? FontWeights.Bold : FontWeights.Normal;
-        }
+            if (pointLabels.TryGetValue(point, out var label))
+            {
+                bool selected = selectedPoints.Contains(point);
+                label.Background = selected ? PointSelectionBrush : Brushes.Transparent;
+                label.FontWeight = selected ? FontWeights.Bold : FontWeights.Normal;
+            }
         paintedPoints.Clear();
         paintedPoints.UnionWith(selectedPoints);
     }
@@ -705,7 +782,7 @@ public sealed class OverlayWindow : PreviewDialog
             TreeViewItem Folder(string xml, string path)
             {
                 string key = xml + "|" + path;
-                var node = new TreeViewItem { Header = path.Length == 0 ? "Unassigned" : path[(path.LastIndexOf('.') + 1)..], IsExpanded = false, Padding = new Thickness(3, 2, 3, 2), ToolTip = xml + " · " + path, Tag = new OverlayCategory(xml, path) };
+                var node = new TreeViewItem { Header = path.Length == 0 ? "Unassigned" : CategoryLabel(xml, path), IsExpanded = false, Padding = new Thickness(3, 2, 3, 2), ToolTip = xml + " · " + path, Tag = new OverlayCategory(xml, path) };
                 if (targets.Any(t => t.DocumentName == xml && t.Path == path && t.HasCopy))
                 {
                     var categoryMenu = new ContextMenu();
@@ -875,21 +952,30 @@ public sealed class OverlayWindow : PreviewDialog
         {
             expandedContent = Content;
             expandedWidth = Width;
+            expandedHeight = Height;
+            MinWidth = MinHeight = 0;
+            ResizeMode = ResizeMode.NoResize;
             NativeGameWindow.GetWindowRect(Handle, out expandedBounds);
-            var restore = new Button { Content = "TS", ToolTip = "Restore Taco Stuffer controls", Padding = new Thickness(0) };
+            var restore = new Button { Margin = new Thickness(0), Content = "TS", ToolTip = "Restore Taco Stuffer controls", Padding = new Thickness(0) };
             restore.Click += (_, _) => SetCompact(false);
             SizeToContent = SizeToContent.Manual;
             Width = 44;
             Height = 36;
+            restoreBrush = new SolidColorBrush((restore.Background as SolidColorBrush)?.Color ?? Color.FromRgb(48, 57, 71));
+            restore.Background = restoreBrush;
             Content = restore;
         }
         else
         {
+            StopMinimizeGlow();
+            restoreBrush = null;
             Content = expandedContent;
             expandedContent = null;
             Width = expandedWidth;
-            Height = double.NaN;
-            SizeToContent = SizeToContent.Height;
+            Height = expandedHeight;
+            MinWidth = 550; MinHeight = 420;
+            ResizeMode = ResizeMode.CanResizeWithGrip;
+            SizeToContent = SizeToContent.Manual;
             UpdateLayout();
             NativeGameWindow.SetWindowPos(Handle, 0, expandedBounds.Left, expandedBounds.Top, 0, 0, 0x0015);
         }
@@ -897,7 +983,33 @@ public sealed class OverlayWindow : PreviewDialog
         // Standalone keeps a TS restore button; hosted mode hides only the controls.
         // Recording, rendering and the selected interaction-test mode stay active.
         UpdateVisibility(client, canRecord, null, Environment.ProcessId, NativeGameWindow.HostedGameOverlay);
+        UpdateMinimizeGlow();
         PresentationChanged?.Invoke();
+    }
+
+    public void SetMinimizeGlow(bool enabled)
+    {
+        if (minimizeGlowEnabled == enabled) return;
+        minimizeGlowEnabled = enabled; UpdateMinimizeGlow();
+    }
+    private void StopMinimizeGlow()
+    {
+        restoreBrush?.BeginAnimation(SolidColorBrush.ColorProperty, null);
+    }
+    private void UpdateMinimizeGlow()
+    {
+        StopMinimizeGlow();
+        if (!compact || hostedMode || !IsVisible || !minimizeGlowEnabled || restoreBrush == null) return;
+        // A gentle four-second cycle, without timers or changes to game rendering.
+        var glow = new ColorAnimation
+        {
+            To = Color.FromRgb(255, 225, 55),
+            Duration = TimeSpan.FromSeconds(2),
+            AutoReverse = true,
+            RepeatBehavior = RepeatBehavior.Forever,
+            EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut }
+        };
+        restoreBrush.BeginAnimation(SolidColorBrush.ColorProperty, glow);
     }
 
     public void EnsureHandle() => new WindowInteropHelper(this).EnsureHandle();
@@ -945,20 +1057,19 @@ public sealed class OverlayWindow : PreviewDialog
                 y = work.Top + 8;
             }
             Topmost = NativeGameWindow.OcclusionFor(false) == 0;
-            if (NativeGameWindow.PlaceOverlay(Handle, tooltipHandle != 0 && NativeGameWindow.IsWindowVisible(tooltipHandle) ? tooltipHandle : NativeGameWindow.EditorOcclusionWindow, x, y, width, height, true))
-                freePositionInitialized = true;
+            if (!freePositionInitialized || !NativeGameWindow.HasCorrectOverlayBand(Handle, false))
+            {
+                if (NativeGameWindow.PlaceOverlay(Handle, NativeGameWindow.EditorOcclusionWindow, x, y, width, height, true))
+                    freePositionInitialized = true;
+            }
+            else if (own.Left != x || own.Top != y || own.Right - own.Left != width || own.Bottom - own.Top != height)
+                NativeGameWindow.SetWindowPos(Handle, 0, x, y, width, height, 0x0014);
         }
     }
 }
 
-internal sealed class LeafCategoryConverter : System.Windows.Data.IValueConverter
+internal sealed class CategoryTextConverter(Func<string, string> label) : System.Windows.Data.IValueConverter
 {
-    public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
-    {
-        string path = value as string ?? "";
-        int dot = path.LastIndexOf('.');
-        return dot < 0 ? path : "…" + path[(dot + 1)..];
-    }
-
+    public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture) => label(value as string ?? "");
     public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture) => throw new NotSupportedException();
 }

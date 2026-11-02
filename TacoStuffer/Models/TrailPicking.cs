@@ -2,21 +2,24 @@ using System.Numerics;
 
 namespace TacoStuffer.Models;
 
-public readonly record struct TrailPickTriangle(TrailSegmentRef Segment, Vector2 A, Vector2 B, Vector2 C, float DepthA, float DepthB, float DepthC);
+public readonly record struct TrailPickTriangle(TrailSegmentRef Segment, Vector2 A, Vector2 B, Vector2 C, float DepthA, float DepthB, float DepthC, long EdgeStart = 0, long EdgeEnd = 0, Vector3 WorldA = default, Vector3 WorldB = default);
 
 public static class TrailPicking
 {
     // Test the projected ribbon itself, rather than a centerline or its bounding box.
     // Perspective-correct depth resolves crossings in favor of the nearest visible ribbon.
     public static TrailSegmentRef? Hit(IReadOnlyList<TrailPickTriangle> triangles, Vector2 mouse)
+        => HitTriangle(triangles,mouse)?.Segment;
+
+    public static TrailPickTriangle? HitTriangle(IReadOnlyList<TrailPickTriangle> triangles,Vector2 mouse)
     {
-        TrailSegmentRef? result = null;
+        TrailPickTriangle? result = null;
         float nearest = float.PositiveInfinity;
         foreach (var triangle in triangles)
         if (TryDepth(triangle, mouse, out float depth) && depth <= nearest)
         {
             nearest = depth;
-            result = triangle.Segment;
+            result = triangle;
         }
         return result;
     }

@@ -1,0 +1,4 @@
+<AttributeGroup version="1" key="showHide" displayName="Show / Hide" appliesTo="POI,MarkerCategory">
+  <Attribute name="show" default="" type="category" optional="false" />
+  <Attribute name="hide" default="" type="category" optional="true" />
+</AttributeGroup>

@@ -3,6 +3,8 @@ using System.IO;
 using System.Numerics;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -14,6 +16,8 @@ namespace TacoStuffer.Views;
 
 public sealed record MarkerStyle(string Icon, float Size, float Height, float Alpha, float FadeNear, float FadeFar, float MinSize, float MaxSize, Color Color, bool WorldVisible = true, bool MinimapVisible = true, bool MapVisible = true, float MapSize = 20)
 {
+    public bool CanFade { get; init; } = true;
+    public BounceStyle? Bounce { get; init; }
     public bool ScaleOnMapWithZoom { get; init; } = true;
     public float GameScale { get; init; } = 1;
     public float MapScale { get; init; } = 1;
@@ -22,18 +26,26 @@ public sealed record MarkerStyle(string Icon, float Size, float Height, float Al
     public StickyStyle? Sticky { get; init; }
 }
 
+public sealed record BounceStyle(string Mode, float Height, float Duration, float Delay, float Range);
+
 public sealed record StickyStyle(float Distance, bool HideOriginal, float X, float Y, float Scale);
 
 public sealed record WorldMarker(string Key, string Label, uint MapId, Vector3 Position, MarkerStyle Style, bool IsTrailPoint = false)
 {
+    public string TipTitle { get; init; } = "";
+    public string TipDescription { get; init; } = "";
     public string InteractionBadge { get; init; } = "";
     public string Category { get; init; } = "";
+    public IReadOnlyList<MarkerRange> Ranges { get; init; } = [];
 }
 
 public sealed record WorldTrail(EditableTrail Trail, string Texture, float Scale, float Alpha, float FadeNear, float FadeFar, float Height, Color Color)
 {
     public string Key { get; init; } = "";
     public string Category { get; init; } = "";
+    public bool Editable { get; init; }
+    public bool IsWall { get; init; }
+    public bool CanFade { get; init; } = true;
     public bool ScaleOnMapWithZoom { get; init; } = true;
     public float GameWidth { get; init; } = 1;
     public float MapWidth { get; init; } = 1;
@@ -45,8 +57,20 @@ public sealed record WorldTrail(EditableTrail Trail, string Texture, float Scale
     public float MapSize { get; init; } = 20;
 }
 
-public sealed class WorldMarkerWindow : Window
+public sealed partial class WorldMarkerWindow : Window
 {
+    public void SetCheckpointTestIndicator(bool active, bool finished = false)
+    {
+        surface.TestIndicator = active ? finished ? "CHECKPOINT TEST MODE ACTIVE · FINISHED" : "CHECKPOINT TEST MODE ACTIVE" : "";
+        surface.InvalidateVisual();
+    }
+    public void ShowResetNotification(string message)
+    {
+        surface.ResetNotice = message; surface.ResetNoticeUntil = Environment.TickCount64 + 3500; surface.InvalidateVisual();
+    }
+    public event Action<TrailInsertionHit>? InsertPointRequested;
+    public event Action? InsertToolCancelled;
+    public void SetInsertTool(bool active) => SetEditTool(active ? OverlayEditTool.InsertPoint : OverlayEditTool.Select);
     private readonly MarkerSurface surface = new();
     private NativeGameWindow.Rect previousBounds;
     private bool passThrough = true;
@@ -66,13 +90,11 @@ public sealed class WorldMarkerWindow : Window
 
     private bool closed;
     private bool previousButtonDown;
+    private readonly OverlayPressTracker pressTracker = new();
     private GpuTrailRenderer? gpuTrails;
     private bool gpuAttempted;
     public event Action? SelectionCleared;
-    public event Action<string>? MarkerSelected;
     public event Action<TrailPointRef>? TrailSelected;
-    public event Action<string, Vector3, bool>? MarkerMoved;
-    public event Action<IReadOnlyDictionary<string, Vector3>, bool>? PointsMoved;
     public Func<bool>? BeginMove { get; set; }
     public string? SelectedKey
     {
@@ -120,36 +142,48 @@ public sealed class WorldMarkerWindow : Window
         {
             NativeGameWindow.DisableActivation(Handle, clickThrough: true);
             HwndSource.FromHwnd(Handle)?.AddHook(NoActivate);
+            toolKeys = new OverlayToolKeys(key => IsVisible && NativeGameWindow.IsGameInputActive(currentGame)
+                && surface.EditTool != OverlayEditTool.Select && (key == 0x1B || surface.EditTool == OverlayEditTool.MergeSegments));
+            toolKeys.Pressed += key => Dispatcher.BeginInvoke(new Action(() => { if (key == 0x1B) InsertToolCancelled?.Invoke(); else ToolAcceptRequested?.Invoke(); }));
             mouseObserver = new OverlayMouseObserver();
+            mouseObserver.Click += click =>
+            {
+                long press = pressTracker.Current;
+                if (!closed) Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, new Action(() => ObserveClick(click, press)));
+            };
             mouseObserver.Button += (down, point, root) =>
             {
+                long press = down ? pressTracker.ObservePress() : 0;
                 if (!closed && !Dispatcher.HasShutdownStarted)
-                    Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, new Action(() => ObserveButton(down, point, root)));
+                    Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, new Action(() => ObserveButton(down, point, root, press)));
             };
         };
         PreviewMouseLeftButtonDown += Down;
         PreviewMouseMove += Move;
         PreviewMouseLeftButtonUp += (_, e) =>
         {
+            if (marqueeOrigin != null) { UpdateMarquee(e.GetPosition(surface)); FinishMarquee(); e.Handled = true; }
             if (drag != null)
             {
                 FinishMove();
                 e.Handled = true;
             }
         };
-        LostMouseCapture += (_, _) => FinishMove();
+        LostMouseCapture += (_, _) => { FinishMove(); CancelMarquee(); };
         Closed += (_, _) =>
         {
             closed = true;
             mouseObserver?.Dispose();
+            toolKeys?.Dispose();
             FinishMove();
             gpuTrails?.Dispose();
             gpuTrails = null;
         };
     }
 
-    private static nint NoActivate(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
+    private nint NoActivate(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
     {
+        if (message == 0x84 && (NativeGameWindow.OtherButtonDown || mouseObserver?.OtherDown == true)) { handled = true; return -1; }
         if (message == 0x21)
         {
             handled = true;
@@ -181,6 +215,7 @@ public sealed class WorldMarkerWindow : Window
         var points = surface.Markers.Where(m => m.IsTrailPoint);
         surface.Markers = sceneMarkers.Concat(points).ToList();
         surface.Trails = trails;
+        surface.InvalidatePicking();
         gpuTrails?.Invalidate();
         surface.InvalidateVisual();
     }
@@ -190,6 +225,7 @@ public sealed class WorldMarkerWindow : Window
         // Ribbon data is independent of editor selection and point handles.
         sceneMarkers = markers.Where(m => !m.IsTrailPoint).ToList();
         surface.Trails = trails;
+        surface.InvalidatePicking();
         surface.Markers = markers;
         gpuTrails?.SetScene(trails);
         surface.ClearLabels();
@@ -199,15 +235,19 @@ public sealed class WorldMarkerWindow : Window
 
     public void InvalidateTrails()
     {
+        surface.InvalidatePicking();
         gpuTrails?.Invalidate();
         surface.InvalidateVisual();
     }
 
     public void Conceal()
     {
+        CancelMarquee();
+        fallbackGesture.Cancel();
         FinishMove();
         surface.SetHandleHighlight(null);
         SetPassThrough(true);
+        surface.HideTooltip();
         gpuTrails?.Hide();
         Topmost = false;
         if (IsVisible) Hide();
@@ -222,7 +262,7 @@ public sealed class WorldMarkerWindow : Window
 
     private static bool Contains(NativeGameWindow.Rect bounds, NativeGameWindow.Point p) => p.X >= bounds.Left && p.X < bounds.Right && p.Y >= bounds.Top && p.Y < bounds.Bottom;
 
-    private void ObserveButton(bool down, NativeGameWindow.Point point, nint root)
+    private void ObserveButton(bool down, NativeGameWindow.Point point, nint root, long press)
     {
         if (closed) return;
         if (!down)
@@ -234,19 +274,7 @@ public sealed class WorldMarkerWindow : Window
             }
             return;
         }
-        // WindowFromPoint can identify the GPU display HWND even though its
-        // layered/transparent style routes the actual click through to GW2.
-        bool fromGpu = gpuTrails != null && gpuTrails.Handle != 0 && root == gpuTrails.Handle;
-        if (!IsVisible || (!NativeGameWindow.IsGameRoot(currentGame, root) && root != Handle && !fromGpu) || !currentGame.TryBounds(out var bounds) || !Contains(bounds, point)) return;
-        if (NativeGameWindow.IsWindowVisible(currentPanel) && NativeGameWindow.GetWindowRect(currentPanel, out var panelBounds) && Contains(panelBounds, point)) return;
-        if (InteractiveExclusionHandle != 0 && NativeGameWindow.GetWindowRect(InteractiveExclusionHandle, out var codeBounds) && Contains(codeBounds, point)) return;
-        var hit = surface.Hit(PointFromScreen(new Point(point.X, point.Y)));
-        if (drag == null && hit == null && SelectedKey != null)
-        {
-            SetSelection([]);
-            SetPassThrough(true);
-            SelectionCleared?.Invoke();
-        }
+        // Selection and editing are classified on release by the native observer.
     }
 
     public void Update(GameClientWindow game, bool ready, MumbleSnapshot? camera, nint panel)
@@ -258,26 +286,32 @@ public sealed class WorldMarkerWindow : Window
             Conceal();
             return;
         }
+        if (toolKeys?.IsActive != true && surface.EditTool != OverlayEditTool.Select && NativeGameWindow.EscapeDown) InsertToolCancelled?.Invoke();
+        bool enter = NativeGameWindow.EnterDown;
+        if (toolKeys?.IsActive != true && enter && !previousEnter && surface.EditTool == OverlayEditTool.MergeSegments) ToolAcceptRequested?.Invoke();
+        previousEnter = enter;
         bool wasVisible = IsVisible;
         var old = surface.Camera;
         bool cameraChanged = old == null || old.CameraPosition != camera.CameraPosition || old.CameraFront != camera.CameraFront || old.Fov != camera.Fov || old.AvatarPosition != camera.AvatarPosition || old.UiState != camera.UiState || old.MapId != camera.MapId || old.Compass != camera.Compass;
         surface.Camera = camera;
+        if (cameraChanged) surface.InvalidatePicking();
         if (!wasVisible) Show();
         if (!NativeGameWindow.IsForeground(game, panel, Environment.ProcessId))
         {
             Conceal();
             return;
         }
+        nint exclusion = PresentationAnchor != 0 ? PresentationAnchor : ToolbarHandle != 0 ? ToolbarHandle : InteractiveExclusionHandle;
         bool positionChanged = !wasVisible || !NativeGameWindow.IsWindowVisible(Handle) || !NativeGameWindow.HasCorrectOverlayBand(Handle, true)
-            || !bounds.Equals(previousBounds) || InteractiveExclusionHandle != previousExclusionHandle;
+            || !bounds.Equals(previousBounds) || exclusion != previousExclusionHandle;
         Topmost = NativeGameWindow.OcclusionFor(true) == 0;
         if (positionChanged || presentationRepair)
         {
-            if (NativeGameWindow.PlaceOverlay(Handle, InteractiveExclusionHandle != 0 ? InteractiveExclusionHandle : panel,
+            if (NativeGameWindow.PlaceOverlay(Handle, exclusion != 0 ? exclusion : panel,
                 bounds.Left, bounds.Top, bounds.Right - bounds.Left, bounds.Bottom - bounds.Top, true, gameSurface: true))
             {
                 previousBounds = bounds;
-                previousExclusionHandle = InteractiveExclusionHandle;
+                previousExclusionHandle = exclusion;
                 presentationRepair = false;
             }
         }
@@ -292,14 +326,29 @@ public sealed class WorldMarkerWindow : Window
                 UpdateDrag(mouse);
                 if (!down) FinishMove();
             }
-            if (mouseObserver?.IsActive != true && down && !previousButtonDown)
-                ObserveButton(true, cursor, NativeGameWindow.GetForegroundWindow());
-            bool overPanel = NativeGameWindow.IsWindowVisible(panel) && NativeGameWindow.GetWindowRect(panel, out var panelBounds) && Contains(panelBounds, cursor);
+            if (marqueeOrigin != null) { if (NativeGameWindow.OtherButtonDown || (camera.UiState & 1) != 0) CancelMarquee(); else { UpdateMarquee(mouse); if (!down) FinishMarquee(); } }
+            if (mouseObserver?.IsActive != true)
+            {
+                if (down && !previousButtonDown) { fallbackOrigin = cursor; fallbackRoot = NativeGameWindow.GetForegroundWindow(); fallbackGesture.Begin(new(cursor.X, cursor.Y), Environment.TickCount64, NativeGameWindow.OtherButtonDown); pressTracker.ObservePress(); }
+                if (down) fallbackGesture.Move(new(cursor.X, cursor.Y));
+                if (!down && previousButtonDown && fallbackGesture.End(new(cursor.X, cursor.Y), Environment.TickCount64, NativeGameWindow.OtherButtonDown))
+                    ObserveClick(new(fallbackOrigin.X, fallbackOrigin.Y, cursor.X, cursor.Y, NativeGameWindow.ShiftDown, NativeGameWindow.ControlDown, fallbackRoot), pressTracker.Current);
+            }
+            bool overPanel = Excluded(cursor) || NativeGameWindow.IsWindowVisible(panel) && NativeGameWindow.GetWindowRect(panel, out var panelBounds) && Contains(panelBounds, cursor);
             overPanel |= InteractiveExclusionHandle != 0 && NativeGameWindow.GetWindowRect(InteractiveExclusionHandle, out var codeBounds) && Contains(codeBounds, cursor);
-            var hit = !overPanel && Contains(bounds, cursor) ? surface.Hit(mouse) : null;
+            surface.UpdateTooltip(mouse, !overPanel && Contains(bounds, cursor));
+            var hit = !overPanel && Contains(bounds, cursor) ? surface.Hit(mouse, includeTrails: false) : null;
             if (drag != null) surface.SetHandleHighlight(drag.Key, drag.Axis);
             else surface.SetHandleHighlight(hit?.Key, hit?.Axis ?? -99);
-            SetPassThrough(drag == null && (overPanel || hit == null));
+            Point? toolCursor = surface.EditTool != OverlayEditTool.Select && (camera.UiState & 1) == 0 && !overPanel && Contains(bounds, cursor) ? mouse : null;
+            bool toolCursorChanged = surface.InsertCursor != toolCursor;
+            surface.InsertCursor = toolCursor;
+            bool cameraGesture = NativeGameWindow.OtherButtonDown || mouseObserver?.OtherDown == true
+                || down && previousButtonDown && drag == null && marqueeOrigin == null;
+            bool marquee = surface.EditTool == OverlayEditTool.Marquee && (camera.UiState & 1) == 0 && !surface.MapArea().Contains(mouse);
+            bool handle = surface.EditTool == OverlayEditTool.Select && hit?.Axis >= -1 && !NativeGameWindow.ShiftDown && !NativeGameWindow.ControlDown;
+            SetPassThrough(drag == null && marqueeOrigin == null && (overPanel || cameraGesture || (!marquee && !handle)));
+            if (toolCursorChanged) surface.InvalidateVisual();
         }
         previousButtonDown = down;
         if (!gpuAttempted && surface.Trails.Count > 0)
@@ -313,7 +362,7 @@ public sealed class WorldMarkerWindow : Window
         {
             try
             {
-                gpuTrails.Render(bounds, Handle, camera, surface.Trails, surface.ProjectFolder, surface.DragPositions, cameraChanged || positionChanged, surface.VisualPreferences.MapTrailStyle);
+                gpuTrails.Render(bounds, Handle, camera, surface.Trails, surface.ProjectFolder, surface.DragPositions, cameraChanged || positionChanged, surface.VisualPreferences.MapTrailStyle, surface.VisualPreferences.PreviewFadeAroundPlayer);
             }
             catch (Exception ex) when (ex is System.Runtime.InteropServices.ExternalException or ArgumentException or InvalidOperationException or NotSupportedException or OverflowException or IOException or UnauthorizedAccessException)
             {
@@ -324,26 +373,18 @@ public sealed class WorldMarkerWindow : Window
                 surface.InvalidateVisual();
             }
         }
-        if (cameraChanged || positionChanged || !surface.UseGpuTrails && surface.Trails.Any(t => (t.WorldVisible || t.MapVisible || t.MinimapVisible) && t.Trail.MapId == camera.MapId && t.AnimSpeed != 0)) surface.InvalidateVisual();
+        if (surface.ResetNotice.Length > 0 || cameraChanged || positionChanged || surface.Markers.Any(m => m.Style.WorldVisible && m.Style.Bounce?.Mode is "bounce" or "rise") || !surface.UseGpuTrails && surface.Trails.Any(t => (t.WorldVisible || t.MapVisible || t.MinimapVisible) && t.Trail.MapId == camera.MapId && t.AnimSpeed != 0)) surface.InvalidateVisual();
     }
 
     private void Down(object sender, MouseButtonEventArgs e)
     {
-        var hit = surface.Hit(e.GetPosition(surface));
-        if (hit == null) return;
-        if (hit.Trail is { } segment)
-        {
-            e.Handled = true;
-            if (surface.NearestTrailPoint(segment, e.GetPosition(surface)) is { } point) TrailSelected?.Invoke(point);
-            return;
-        }
-        if (hit.Axis == -2)
-        {
-            SetSelection([hit.Key]);
-            MarkerSelected?.Invoke(hit.Key);
-        }
+        if (BeginMarquee(e)) return;
+        if (surface.EditTool != OverlayEditTool.Select || NativeGameWindow.OtherButtonDown || NativeGameWindow.ShiftDown || NativeGameWindow.ControlDown) return;
+        var hit = surface.Hit(e.GetPosition(surface), includeTrails: false);
+        if (hit == null || hit.Axis < -1 || surface.Camera == null) return;
+        pressTracker.ConsumeCurrent(); previousButtonDown = true;
+        if (BeginMove?.Invoke() != true) return;
         e.Handled = true;
-        if (hit.Axis < -1 || surface.Camera == null || BeginMove?.Invoke() != true) return;
         var marker = surface.Markers.FirstOrDefault(m => m.Key == hit.Key);
         if (marker == null) return;
         var forward = Vector3.Normalize(surface.Camera.CameraFront);
@@ -396,10 +437,10 @@ public sealed class WorldMarkerWindow : Window
         }
         if (positions.Values.Any(p => !EditableTrails.Finite(p))) return;
         surface.DragPositions = positions;
+        surface.InvalidatePicking();
         gpuTrails?.Invalidate();
         surface.InvalidateVisual();
-        if (TrailPointRef.Parse(drag.Key) != null) PointsMoved?.Invoke(positions, false);
-        else MarkerMoved?.Invoke(drag.Key, positions[drag.Key], false);
+        PositionsMoved?.Invoke(positions, false);
     }
 
     private void FinishMove()
@@ -410,6 +451,7 @@ public sealed class WorldMarkerWindow : Window
         drag = null;
         lastDragMouse = null;
         surface.DragPositions = null;
+        surface.InvalidatePicking();
         surface.SetHandleHighlight(null);
         gpuTrails?.Invalidate();
         // Release first: editor work must never keep the game/panel captured.
@@ -419,8 +461,7 @@ public sealed class WorldMarkerWindow : Window
         surface.InvalidateVisual();
         if (positions != null)
         {
-            if (TrailPointRef.Parse(ended.Key) != null) PointsMoved?.Invoke(positions, true);
-            else if (positions.TryGetValue(ended.Key, out var final)) MarkerMoved?.Invoke(ended.Key, final, true);
+            PositionsMoved?.Invoke(positions, true);
         }
     }
 
@@ -428,7 +469,7 @@ public sealed class WorldMarkerWindow : Window
 
     private sealed record HitRegion(string Key, int Axis, Rect Bounds, Vector2 Start, Vector2 End, TrailSegmentRef? Trail = null);
 
-    private sealed class MarkerSurface : FrameworkElement
+    private sealed partial class MarkerSurface : FrameworkElement
     {
         public List<WorldMarker> Markers { get; set; } = [];
         public MumbleSnapshot? Camera { get; set; }
@@ -439,6 +480,8 @@ public sealed class WorldMarkerWindow : Window
         public HashSet<string> SelectedKeys { get; set; } = [];
         public HashSet<string> NameSelectedKeys { get; set; } = [];
         public List<WorldTrail> Trails { get; set; } = [];
+        public bool InsertToolActive;
+        public Point? InsertCursor;
         public bool UseGpuTrails { get; set; }
         private string? highlightedKey;
         private int highlightedAxis = -99;
@@ -482,8 +525,39 @@ public sealed class WorldMarkerWindow : Window
         private readonly Dictionary<string, ImageSource?> icons = [];
         private readonly Dictionary<string, Brush> trailBrushes = [];
         private readonly List<HitRegion> hits = [];
-        private readonly List<TrailPickTriangle> trailHits = [];
+        private readonly TrailPickCache trailPickCache = new();
+        public void InvalidatePicking()
+        {
+            trailPickCache.Invalidate(); pointsValid = endpointsValid = false;
+        }
+        protected override void OnRenderSizeChanged(SizeChangedInfo sizeInfo)
+        {
+            InvalidatePicking(); base.OnRenderSizeChanged(sizeInfo);
+        }
         private readonly long animationStart = System.Diagnostics.Stopwatch.GetTimestamp();
+        private readonly BouncePreview bouncePreview = new();
+        private readonly List<(Rect Bounds, string Text)> mapTips = [];
+        private readonly ToolTip hoverTip = new() { Background = new SolidColorBrush(Color.FromRgb(35, 39, 45)), Foreground = Brushes.White, Padding = new Thickness(10), Placement = PlacementMode.AbsolutePoint, StaysOpen = true };
+        public void HideTooltip() => hoverTip.IsOpen = false;
+        public void UpdateTooltip(Point point, bool enabled)
+        {
+            string? value = enabled ? mapTips.LastOrDefault(t => t.Bounds.Contains(point)).Text : null;
+            if (string.IsNullOrEmpty(value)) { HideTooltip(); return; }
+            var screen = PointToScreen(point); var dpi = VisualTreeHelper.GetDpi(this);
+            hoverTip.Content = value; hoverTip.HorizontalOffset = screen.X / dpi.DpiScaleX + 14; hoverTip.VerticalOffset = screen.Y / dpi.DpiScaleY + 14; hoverTip.IsOpen = true;
+        }
+        private double SoftFade(Vector3 position, bool canFade, bool marker)
+        {
+            if (!canFade || Camera == null) return 1;
+            double alpha = VisualPreferences.PreviewFadeAroundPlayer ? Math.Clamp(Vector3.Distance(position, Camera.AvatarPosition) / 2, 0, 1) : 1;
+            if (marker && VisualPreferences.PreviewFadeBetweenCamera)
+            {
+                Vector3 axis = Camera.CameraPosition - Camera.AvatarPosition;
+                float t = axis.LengthSquared() < .0001f ? -1 : Vector3.Dot(position - Camera.AvatarPosition, axis) / axis.LengthSquared();
+                if (t is > 0 and < 1) alpha *= Math.Clamp(Vector3.Distance(position, Camera.AvatarPosition + axis * t) / .5, 0, 1);
+            }
+            return alpha;
+        }
         private double labelDpi;
         public void ClearLabels() => labels.Clear();
 
@@ -523,13 +597,100 @@ public sealed class WorldMarkerWindow : Window
             }
         }
 
-        public HitRegion? Hit(Point point)
+        public HitRegion? Hit(Point point, bool includeTrails = true)
         {
             var mouse = new Vector2((float)point.X, (float)point.Y);
             var marker = hits.LastOrDefault(h => h.Bounds.Contains(point) && (h.Axis < 0 || SegmentDistance(mouse, h.Start, h.End) < 8));
             if (marker != null) return marker;
-            if (MapArea().Contains(point) || TrailPicking.Hit(trailHits, mouse) is not { } segment) return null;
+            if (!includeTrails || MapArea().Contains(point) || TrailPicking.Hit(trailPickCache.Get(BuildTrailHits), mouse) is not { } segment) return null;
             return new("segment|" + segment.Trail + "|" + segment.Segment, -3, default, default, default, segment);
+        }
+
+        public TrailInsertionHit? InsertionHit(Point mouse)
+        {
+            if (Camera == null || (Camera.UiState & 1) != 0 || MapArea().Contains(mouse)) return null;
+            if (TrailPicking.HitTriangle(trailPickCache.Get(BuildTrailHits), new((float)mouse.X, (float)mouse.Y)) is not { EdgeStart: > 0, EdgeEnd: > 0 } hit) return null;
+            var frame = new CameraProjection.Frame(Camera, (float)ActualWidth, (float)ActualHeight);
+            float? fraction = TrailPointInsertion.Fraction(frame, hit.WorldA, hit.WorldB, new((float)mouse.X, (float)mouse.Y));
+            return fraction is > .00001f and < .99999f ? new(hit.Segment.Trail, hit.Segment.Segment, hit.EdgeStart, hit.EdgeEnd, fraction.Value) : null;
+        }
+
+        private static readonly Brush[] RangeColors = [Brushes.Gold, Brushes.Cyan, Brushes.LimeGreen, Brushes.Orchid, Brushes.Orange, Brushes.CornflowerBlue];
+        private static string RangeCaption(MarkerRange range) => range.Attribute + " · "
+            + (range.GameUnits is { } units ? units.ToString("0.##", CultureInfo.InvariantCulture) + " units / " : "")
+            + range.Radius.ToString("0.##", CultureInfo.InvariantCulture) + " m"
+            + (range.Reference == "camera" ? " (camera)" : "");
+
+        private void DrawMapRanges(DrawingContext drawing, Rect area, bool full, float width, float height, DpiScale dpi)
+        {
+            if (!VisualPreferences.ShowMarkerRange || Camera == null || !MapRibbonProjection.TryBasis(Camera, width, height, out var basis)) return;
+            foreach (var marker in Markers.Where(m => !m.IsTrailPoint && m.MapId == Camera.MapId
+                && (SelectedKeys.Contains(m.Key) || NameSelectedKeys.Contains(m.Key)) && (full ? m.Style.MapVisible : m.Style.MinimapVisible)))
+            {
+                var center = basis.Project(PreviewPosition(marker.Key, marker.Position));
+                var origin = new Point(center.X / dpi.DpiScaleX, center.Y / dpi.DpiScaleY);
+                for (int r = 0; r < marker.Ranges.Count; r++)
+                {
+                    var range = marker.Ranges[r]; var brush = RangeColors[r % RangeColors.Length];
+                    double physicalRadius = range.Radius * basis.X.Length();
+                    double rx = physicalRadius / dpi.DpiScaleX, ry = physicalRadius / dpi.DpiScaleY;
+                    if (!double.IsFinite(rx) || !double.IsFinite(ry) || rx <= 0 || ry <= 0) continue;
+                    if (!new Rect(origin.X - rx, origin.Y - ry, rx * 2, ry * 2).IntersectsWith(area)) continue;
+                    drawing.DrawEllipse(null, new Pen(brush, 1), origin, rx, ry);
+                    Point? label = null;
+                    for (int i = 0; i < 64; i++)
+                    {
+                        double angle = i * Math.Tau / 64;
+                        var sample = new Point(origin.X + rx * Math.Cos(angle), origin.Y + ry * Math.Sin(angle));
+                        if (area.Contains(sample)) { label = sample; break; }
+                    }
+                    if (label is not { } anchor) continue;
+                    var text = new FormattedText(RangeCaption(range), CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 11, brush, dpi.PixelsPerDip) { MaxTextWidth = Math.Max(1, area.Width - 12), Trimming = TextTrimming.CharacterEllipsis };
+                    double x = Math.Clamp(anchor.X + 4, area.Left + 4, Math.Max(area.Left + 4, area.Right - text.Width - 8));
+                    double y = Math.Clamp(anchor.Y + r * 13, area.Top + 3, Math.Max(area.Top + 3, area.Bottom - text.Height - 3));
+                    drawing.DrawRoundedRectangle(LabelBackground, null, new Rect(x - 3, y - 1, text.Width + 6, text.Height + 2), 2, 2);
+                    drawing.DrawText(text, new Point(x, y));
+                }
+            }
+        }
+
+        private void DrawRanges(DrawingContext drawing)
+        {
+            if (!VisualPreferences.ShowMarkerRange || Camera == null) return;
+            var frame = new CameraProjection.Frame(Camera, (float)ActualWidth, (float)ActualHeight);
+            foreach (var marker in Markers.Where(m => !m.IsTrailPoint && m.MapId == Camera.MapId && (SelectedKeys.Contains(m.Key) || NameSelectedKeys.Contains(m.Key))))
+                for (int r = 0; r < marker.Ranges.Count; r++)
+                {
+                    var range = marker.Ranges[r]; var brush = RangeColors[r % RangeColors.Length]; var pen = new Pen(brush, 1);
+                    // Rings use the XML position (interaction center), never the raised icon billboard.
+                    var center = DragPositions?.GetValueOrDefault(marker.Key, marker.Position) ?? marker.Position;
+                    if (range.Reference == "camera") center += Vector3.UnitY * marker.Style.Height;
+                    Point? label = null;
+                    for (int i = 0; i < 128; i++)
+                    {
+                        Vector3 At(int step) { float a = step * MathF.Tau / 128; return center + new Vector3(MathF.Cos(a) * range.Radius, .025f, MathF.Sin(a) * range.Radius); }
+                        var a = At(i); var b = At(i + 1); float start = 0, end = 1;
+                        bool visible = true;
+                        for (int plane = 0; plane < 5; plane++)
+                        {
+                            float da = frame.PlaneDistance(a, plane), db = frame.PlaneDistance(b, plane);
+                            if (da < 0 && db < 0) { visible = false; break; }
+                            if ((da < 0) != (db < 0)) { float t = da / (da - db); if (da < 0) start = Math.Max(start, t); else end = Math.Min(end, t); }
+                        }
+                        if (!visible || start > end || !frame.TryProject(Vector3.Lerp(a, b, start), out var x) || !frame.TryProject(Vector3.Lerp(a, b, end), out var y)) continue;
+                        drawing.DrawLine(pen, new Point(x.X, x.Y), new Point(y.X, y.Y));
+                        if (label == null) label = new Point(x.X, x.Y);
+                    }
+                    if (label is { } anchor)
+                    {
+                        string caption = RangeCaption(range);
+                        var text = new FormattedText(caption, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 12, brush, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+                        double x = Math.Clamp(anchor.X + 4, 4, Math.Max(4, ActualWidth - text.Width - 8));
+                        double y = Math.Clamp(anchor.Y + r * 15, 4, Math.Max(4, ActualHeight - text.Height - 4));
+                        drawing.DrawRoundedRectangle(LabelBackground, null, new Rect(x - 4, y - 1, text.Width + 8, text.Height + 2), 2, 2);
+                        drawing.DrawText(text, new Point(x, y));
+                    }
+                }
         }
 
         public TrailPointRef? NearestTrailPoint(TrailSegmentRef reference, Point mouse)
@@ -541,8 +702,8 @@ public sealed class WorldMarkerWindow : Window
             var projector = new CameraProjection.Frame(Camera, (float)ActualWidth, (float)ActualHeight);
             var points = new List<(long Id, Vector2 Screen)>();
             foreach (var point in segment.Points)
-            if (projector.TryProject(TrailPosition(reference.Trail, reference.Segment, point) + Vector3.UnitY * line.Height, out var screen))
-                points.Add((point.Id, screen));
+                if (projector.TryProject(TrailPosition(reference.Trail, reference.Segment, point) + Vector3.UnitY * line.Height, out var screen))
+                    points.Add((point.Id, screen));
             long? id = TrailPicking.NearestPoint(points, new((float)mouse.X, (float)mouse.Y)) ?? segment.Points.FirstOrDefault()?.Id;
             return id.HasValue ? new(reference.Trail, reference.Segment, id.Value) : null;
         }
@@ -632,11 +793,25 @@ public sealed class WorldMarkerWindow : Window
             }
         }
 
+        public string TestIndicator = "", ResetNotice = "";
+        public long ResetNoticeUntil;
+        private void DrawMessages(DrawingContext drawing)
+        {
+            if (Environment.TickCount64 >= ResetNoticeUntil) ResetNotice = "";
+            string message = (ToolStatus.Length > 0 ? ToolStatus + "\n" : "") + TestIndicator + (TestIndicator.Length > 0 && ResetNotice.Length > 0 ? "\n" : "") + ResetNotice;
+            DrawToolCursor(drawing);
+            if (message.Length == 0) return;
+            var text = new FormattedText(message, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 16, Brushes.Gold, VisualTreeHelper.GetDpi(this).PixelsPerDip) { MaxTextWidth = Math.Max(100, ActualWidth - 80) };
+            drawing.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(220, 20, 25, 32)), null, new Rect(20, 18, text.Width + 24, text.Height + 16), 5, 5);
+            drawing.DrawText(text, new Point(32, 26));
+        }
+
         protected override void OnRender(DrawingContext drawing)
         {
             base.OnRender(drawing);
             hits.Clear();
-            trailHits.Clear();
+            trailPickCache.Invalidate();
+            mapTips.Clear();
             if (Camera == null || ActualWidth < 2 || ActualHeight < 2) return;
             double dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
             if (dpi != labelDpi)
@@ -647,13 +822,15 @@ public sealed class WorldMarkerWindow : Window
             if ((Camera.UiState & 1) != 0)
             {
                 DrawMap(drawing);
+                DrawMessages(drawing);
                 return;
             }
             var area = new RectangleGeometry(new Rect(0, 0, ActualWidth, ActualHeight));
             var mapArea = MapArea();
             drawing.PushClip(mapArea.Width > 0 && mapArea.Height > 0 ? new CombinedGeometry(GeometryCombineMode.Exclude, area, new RectangleGeometry(mapArea)) : area);
             if (!UseGpuTrails) DrawTrails(drawing);
-            AddTrailHitRegions(drawing);
+            DrawRanges(drawing);
+            DrawToolVisuals(drawing);
             foreach (var marker in Markers)
             {
                 bool selected = SelectedKeys.Contains(marker.Key);
@@ -664,9 +841,13 @@ public sealed class WorldMarkerWindow : Window
                 bool sticky = marker.MapId == Camera.MapId && marker.Style.Sticky is { } settings
                     && VisualAttributeMath.StickyInRange(Camera.AvatarPosition, raw, settings.Distance);
                 if (sticky && marker.Style.Sticky!.HideOriginal) continue;
-                var position = raw + Vector3.UnitY * marker.Style.Height;
+                float lift = 0;
+                if (marker.Style.Bounce is { } bounce && (bounce.Mode.Equals("bounce", StringComparison.OrdinalIgnoreCase) || bounce.Mode.Equals("rise", StringComparison.OrdinalIgnoreCase)))
+                    lift = (float)bouncePreview.Sample(marker.Key, Vector3.Distance(raw, Camera.AvatarPosition) <= Math.Max(0, bounce.Range), bounce.Mode, bounce.Height, bounce.Duration, bounce.Delay, System.Diagnostics.Stopwatch.GetElapsedTime(animationStart).TotalSeconds);
+                var position = raw + Vector3.UnitY * (marker.Style.Height + lift);
                 if (marker.MapId != Camera.MapId || !CameraProjection.TryProject(Camera, position, (float)ActualWidth, (float)ActualHeight, out var screen)) continue;
                 double alpha = MarkerPreviewMath.Opacity(marker.Style.Alpha, Vector3.Distance(position, Camera.CameraPosition), marker.Style.FadeNear, marker.Style.FadeFar);
+                alpha *= SoftFade(position, marker.Style.CanFade, true);
                 var markerDpi = VisualTreeHelper.GetDpi(this);
                 float fov = Camera.Fov is > .1f and < 3 ? Camera.Fov : CameraProjection.DefaultFov;
                 float focal = (float)(ActualHeight * markerDpi.DpiScaleY) / (2 * MathF.Tan(fov / 2));
@@ -720,9 +901,10 @@ public sealed class WorldMarkerWindow : Window
             drawing.Pop();
             DrawMap(drawing);
             foreach (var marker in Markers)
-            if (marker.MapId == Camera.MapId && marker.Style.WorldVisible && marker.Style.Sticky is { } sticky
-                && VisualAttributeMath.StickyInRange(Camera.AvatarPosition, PreviewPosition(marker.Key, marker.Position), sticky.Distance))
-                DrawSticky(drawing, marker, Icon(marker.Style) ?? DefaultTint(marker.Style.Color, false));
+                if (marker.MapId == Camera.MapId && marker.Style.WorldVisible && marker.Style.Sticky is { } sticky
+                    && VisualAttributeMath.StickyInRange(Camera.AvatarPosition, PreviewPosition(marker.Key, marker.Position), sticky.Distance))
+                    DrawSticky(drawing, marker, Icon(marker.Style) ?? DefaultTint(marker.Style.Color, false));
+            DrawMessages(drawing);
         }
 
         private void DrawSticky(DrawingContext drawing, WorldMarker marker, ImageSource image)
@@ -763,7 +945,7 @@ public sealed class WorldMarkerWindow : Window
 
         private Vector3 PreviewPosition(string key, Vector3 position) => DragPositions != null && DragPositions.TryGetValue(key, out var moved) ? moved : position;
 
-        private Rect MapArea()
+        public Rect MapArea()
         {
             if (Camera == null || Camera.Compass == null) return Rect.Empty;
             var dpi = VisualTreeHelper.GetDpi(this);
@@ -794,7 +976,7 @@ public sealed class WorldMarkerWindow : Window
             bool full = (Camera.UiState & 1) != 0;
             mapPreviewSegments.Clear();
             if (DragPositions != null) foreach (string key in DragPositions.Keys)
-                if (TrailPointRef.Parse(key) is { } point) mapPreviewSegments.Add(new(point.Trail, point.Segment));
+                    if (TrailPointRef.Parse(key) is { } point) mapPreviewSegments.Add(new(point.Trail, point.Segment));
             if (!UseGpuTrails && MapRibbonProjection.TryBasis(Camera, width, height, out var basis))
             {
                 foreach (var line in Trails)
@@ -845,6 +1027,7 @@ public sealed class WorldMarkerWindow : Window
                     drawing.Pop();
                 }
             }
+            DrawMapRanges(drawing, area, full, width, height, dpi);
             foreach (var marker in Markers)
             {
                 if (marker.IsTrailPoint || marker.MapId != Camera.MapId || (full ? !marker.Style.MapVisible : !marker.Style.MinimapVisible)) continue;
@@ -855,58 +1038,48 @@ public sealed class WorldMarkerWindow : Window
                 if (!rect.IntersectsWith(area)) continue;
                 drawing.PushOpacity(Math.Clamp(marker.Style.Alpha, 0, 1));
                 drawing.DrawImage(Icon(marker.Style) ?? DefaultTint(marker.Style.Color, false), rect);
+                if (!string.IsNullOrEmpty(marker.TipTitle)) mapTips.Add((rect, marker.TipTitle + (marker.TipDescription.Length > 0 ? "\n" + marker.TipDescription : "") + "\n" + Vector3.Distance(marker.Position, Camera.AvatarPosition).ToString("0.0", CultureInfo.InvariantCulture) + " m"));
                 drawing.Pop();
             }
             drawing.Pop();
         }
 
-        private void AddTrailHitRegions(DrawingContext drawing)
+        private void BuildTrailHits(List<TrailPickTriangle> trailHits)
         {
             if (Camera == null) return;
             var projector = new CameraProjection.Frame(Camera, (float)ActualWidth, (float)ActualHeight);
             Span<RibbonVertex> clipped = stackalloc RibbonVertex[12];
-            var geometry = new StreamGeometry { FillRule = FillRule.Nonzero };
-            using (var path = geometry.Open())
+            foreach (var line in Trails)
             {
-                foreach (var line in Trails)
+                if (!line.WorldVisible || line.Scale <= 0 || line.Trail.MapId != Camera.MapId || line.Color.A == 0 || line.Alpha <= 0) continue;
+                foreach (var segment in line.Trail.Segments)
                 {
-                    if (!line.WorldVisible || line.Scale <= 0 || line.Trail.MapId != Camera.MapId || line.Color.A == 0 || line.Alpha <= 0) continue;
-                    foreach (var segment in line.Trail.Segments)
+                    var reference = new TrailSegmentRef(line.Trail.Number, segment.Id);
+                    for (int i = 1; i < segment.Points.Count; i++)
                     {
-                        var reference = new TrailSegmentRef(line.Trail.Number, segment.Id);
-                        for (int i = 1; i < segment.Points.Count; i++)
+                        var a = TrailPosition(line.Trail.Number, segment.Id, segment.Points[i - 1]) + Vector3.UnitY * line.Height;
+                        var b = TrailPosition(line.Trail.Number, segment.Id, segment.Points[i]) + Vector3.UnitY * line.Height;
+                        var direction = b - a;
+                        if (!EditableTrails.Finite(a) || !EditableTrails.Finite(b) || direction.LengthSquared() < .000000000001f
+                            || MarkerPreviewMath.Opacity(line.Alpha, Vector3.Distance((a + b) / 2, Camera.CameraPosition), line.FadeNear, line.FadeFar) <= 0) continue;
+                        var side = line.IsWall ? GpuTrailGeometry.WallSide(direction) : Vector3.Cross(direction, Vector3.UnitY);
+                        side = (side.LengthSquared() < .000001f ? Vector3.UnitX : Vector3.Normalize(side)) * (.508f * Math.Max(0, line.Scale) * line.GameWidth);
+                        // These are the same two ribbon triangles used by GPU and WPF rendering.
+                        for (int half = 0; half < 2; half++)
                         {
-                            var a = TrailPosition(line.Trail.Number, segment.Id, segment.Points[i - 1]) + Vector3.UnitY * line.Height;
-                            var b = TrailPosition(line.Trail.Number, segment.Id, segment.Points[i]) + Vector3.UnitY * line.Height;
-                            var direction = b - a;
-                            if (!EditableTrails.Finite(a) || !EditableTrails.Finite(b) || direction.LengthSquared() < .000000000001f
-                                || MarkerPreviewMath.Opacity(line.Alpha, Vector3.Distance((a + b) / 2, Camera.CameraPosition), line.FadeNear, line.FadeFar) <= 0) continue;
-                            var side = Vector3.Cross(direction, Vector3.UnitY);
-                            side = (side.LengthSquared() < .000001f ? Vector3.UnitX : Vector3.Normalize(side)) * (.508f * Math.Max(0, line.Scale) * line.GameWidth);
-                            // These are the same two ribbon triangles used by GPU and WPF rendering.
-                            for (int half = 0; half < 2; half++)
+                            int count = RibbonProjection.Clip(projector, new(a - side, default),
+                                new(half == 0 ? a + side : b + side, default), new(half == 0 ? b + side : b - side, default), clipped);
+                            for (int j = 1; j < count - 1; j++)
                             {
-                                int count = RibbonProjection.Clip(projector, new(a - side, default),
-                                    new(half == 0 ? a + side : b + side, default), new(half == 0 ? b + side : b - side, default), clipped);
-                                for (int j = 1; j < count - 1; j++)
-                                {
-                                    if (!projector.TryProject(clipped[0].Position, out var x) || !projector.TryProject(clipped[j].Position, out var y)
-                                        || !projector.TryProject(clipped[j + 1].Position, out var z)) continue;
-                                    trailHits.Add(new(reference, x, y, z,
-                                        projector.Depth(clipped[0].Position), projector.Depth(clipped[j].Position), projector.Depth(clipped[j + 1].Position)));
-                                    // Consistent winding keeps overlapping transparent hit areas filled.
-                                    if ((y.X - x.X) * (z.Y - x.Y) - (y.Y - x.Y) * (z.X - x.X) < 0) (y, z) = (z, y);
-                                    path.BeginFigure(new(x.X, x.Y), true, true);
-                                    path.LineTo(new(y.X, y.Y), true, false);
-                                    path.LineTo(new(z.X, z.Y), true, false);
-                                }
+                                if (!projector.TryProject(clipped[0].Position, out var x) || !projector.TryProject(clipped[j].Position, out var y)
+                                    || !projector.TryProject(clipped[j + 1].Position, out var z)) continue;
+                                trailHits.Add(new(reference, x, y, z,
+                                    projector.Depth(clipped[0].Position), projector.Depth(clipped[j].Position), projector.Depth(clipped[j + 1].Position), segment.Points[i - 1].Id, segment.Points[i].Id, a, b));
                             }
                         }
                     }
                 }
             }
-            geometry.Freeze();
-            drawing.DrawGeometry(HitBrush, null, geometry);
         }
 
         private long lastTrailTiming;
@@ -934,11 +1107,11 @@ public sealed class WorldMarkerWindow : Window
                         Vector3 b = TrailPosition(line.Trail.Number, segment.Id, segment.Points[i]) + Vector3.UnitY * line.Height;
                         var direction = b - a;
                         float distance = direction.Length();
-                        var side = Vector3.Cross(direction, Vector3.UnitY);
+                        var side = line.IsWall ? GpuTrailGeometry.WallSide(direction) : Vector3.Cross(direction, Vector3.UnitY);
                         if (distance < 0.000001f) continue;
                         side = side.LengthSquared() < 0.000001f ? Vector3.UnitX * 0.508f : Vector3.Normalize(side) * 0.508f;
                         side *= Math.Max(0, line.Scale) * line.GameWidth;
-                        double alpha = MarkerPreviewMath.Opacity(line.Alpha, Vector3.Distance((a + b) / 2, Camera.CameraPosition), line.FadeNear, line.FadeFar);
+                        double alpha = MarkerPreviewMath.Opacity(line.Alpha, Vector3.Distance((a + b) / 2, Camera.CameraPosition), line.FadeNear, line.FadeFar) * SoftFade((a + b) / 2, line.CanFade, false);
                         if (alpha <= 0)
                         {
                             length += distance;

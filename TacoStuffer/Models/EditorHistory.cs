@@ -5,13 +5,13 @@ namespace TacoStuffer.Models;
 public sealed record HistoryXml(string Name, string Xml, string Source, bool Open);
 
 public sealed record EditorState(List<HistoryXml> Documents, List<string> Trails, List<string> CategoryOrder,
-    Dictionary<string, string> TextureLabels, long NextMarker, long NextTrail)
+    Dictionary<string, string> TextureLabels, long NextMarker, long NextTrail, List<string>? OutlinerOrder = null)
 {
     // View-only tab changes do not create an edit.
     public string Fingerprint() => JsonSerializer.Serialize(new
     {
         Documents = Documents.Select(d => new { d.Name, d.Xml, d.Source }), Trails, CategoryOrder,
-        TextureLabels = TextureLabels.OrderBy(p => p.Key).ToArray(), NextMarker, NextTrail
+        TextureLabels = TextureLabels.OrderBy(p => p.Key).ToArray(), NextMarker, NextTrail, OutlinerOrder
     });
 }
 
@@ -51,6 +51,21 @@ public sealed class HistoryJournal<T>(Func<T, string> fingerprint, int limit = 1
         currentKey = key;
         while (undo.Count > 1 && (undo.Count > Math.Max(1, limit) || undo.Sum(e => e.Weight) > byteLimit)) undo.RemoveAt(0);
         return true;
+    }
+
+    // File organization is immediate. Rebase saved editor states so undoing an
+    // XML edit never resurrects references to asset paths that no longer exist.
+    public void Transform(Func<T, T> transform)
+    {
+        if (!Initialized) return;
+        HistoryEntry<T> Map(HistoryEntry<T> entry)
+        {
+            var before = transform(entry.Before); var after = transform(entry.After);
+            return new(entry.Label, before, after, ((long)fingerprint(before).Length + fingerprint(after).Length) * 2);
+        }
+        for (int i = 0; i < undo.Count; i++) undo[i] = Map(undo[i]);
+        for (int i = 0; i < redo.Count; i++) redo[i] = Map(redo[i]);
+        current = transform(current); currentKey = fingerprint(current);
     }
 
     public T Undo()

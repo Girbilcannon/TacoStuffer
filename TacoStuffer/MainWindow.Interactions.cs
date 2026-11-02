@@ -26,6 +26,7 @@ public partial class MainWindow
 
     private void RebuildInteractions()
     {
+        BuildPathingPreview();
         var categories = CategoryValues();
         markerInteractions = pages.SelectMany(p => p.Xml.Descendants("POI").Select(e => MarkerInteraction.Read(p.Name + "|" + ElementKey(e), e, categories)))
             .OfType<MarkerInteraction>().ToList();
@@ -57,6 +58,7 @@ public partial class MainWindow
 
     private void UpdateInteractionPreview()
     {
+        RefreshAttributeAlerts();
         if (gameFrame == null || !mumbleSession.IsPlayable || overlay == null)
         {
             infoHud?.Hide(); copyHud?.Hide(); interactionSession.Reset();
@@ -74,7 +76,7 @@ public partial class MainWindow
         }
         long now = Environment.TickCount64;
         bool input = CanInteractInWorld();
-        var visible = markerInteractions.Where(m => PreviewCategoryVisible(m.Category)).ToList();
+        var visible = checkpointTestActive ? new List<MarkerInteraction>() : markerInteractions.Where(m => PreviewCategoryVisible(m.Category) && AdvancedVisible(m.Key)).ToList();
         interactionPreview = interactionSession.Update(visible, gameFrame.MapId, gameFrame.AvatarPosition, now,
             input && interactionTestMode && InteractionPreferences.MarkerClipboard == MarkerClipboardMode.Always);
         if (interactionPreview.Copy?.Key != dismissedCopyKey) dismissedCopyKey = null;
@@ -93,12 +95,14 @@ public partial class MainWindow
             interactionSession.AutomaticAttempted(now);
             TryMarkerCopy(automatic.Copy, automatic.Message);
         }
+        if (!checkpointTestActive) UpdateAdvancedPreview(gameFrame, true);
+        UpdateCheckpointTest();
         if (!input || !gameClient.TryBounds(out var bounds)) { infoHud?.Hide(); copyHud?.Hide(); return; }
         if (InteractionPreferences.ShowMarkerInformation && interactionPreview.Info is { } info)
         {
             if (infoHud == null)
             {
-                infoHud = new InteractionHudWindow(true) { Owner = overlay };
+                infoHud = new InteractionHudWindow(true);
                 infoHud.Dismissed += () => { if (shownInfoKey != null) interactionSession.Dismiss(shownInfoKey); };
             }
             shownInfoKey = info.Key;
@@ -111,7 +115,7 @@ public partial class MainWindow
         {
             if (copyHud == null)
             {
-                copyHud = new InteractionHudWindow(false) { Owner = overlay };
+                copyHud = new InteractionHudWindow(false);
                 copyHud.CopyRequested += CopyNearbyMarker;
                 copyHud.Dismissed += () => { dismissedCopyKey = interactionPreview.Copy?.Key; confirmationUntil = 0; };
             }
@@ -123,14 +127,17 @@ public partial class MainWindow
             copyHud.Present(bounds, overlay.Handle, false);
         }
         else copyHud?.Hide();
+        UpdateToolbarLayer();
     }
 
     private void CopyNearbyMarker()
     {
-        if (!CanInteractInWorld() || interactionPreview.Copy is not { } marker || gameFrame == null) return;
-        if (marker.MapId != gameFrame.MapId || !PreviewCategoryVisible(marker.Category)
-            || System.Numerics.Vector3.DistanceSquared(marker.Position, gameFrame.AvatarPosition) > (double)marker.CopyRadius * marker.CopyRadius) return;
-        TryMarkerCopy(marker.Copy, marker.Message);
+        if (!CanInteractInWorld() || gameFrame == null) return;
+        if (checkpointTestActive) { TryCheckpointResetManual(); return; }
+        if (interactionPreview.Copy is { } marker && marker.MapId == gameFrame.MapId && PreviewCategoryVisible(marker.Category)
+            && System.Numerics.Vector3.DistanceSquared(marker.Position, gameFrame.AvatarPosition) <= (double)marker.CopyRadius * marker.CopyRadius)
+            TryMarkerCopy(marker.Copy, marker.Message);
+        TriggerNearbyAdvanced();
     }
 
     private bool TryMarkerCopy(string payload, string message)
@@ -171,7 +178,9 @@ public partial class MainWindow
     private static string InteractionFieldLabel(string name) => name.ToLowerInvariant() switch
     {
         "info" => "Info Text", "inforange" => "Info Range (m)", "copy" => "Copy Text",
-        "copy-message" => "Confirmation Message", "triggerrange" => "Trigger Range (m)", "autotrigger" => "Auto Trigger", _ => name
+        "copy-message" => "Confirmation Message", "triggerrange" => "Trigger Range (m)", "autotrigger" => "Auto Trigger", "resetguid" => "Reset GUIDs",
+        "ischeckpoint" => "Is Checkpoint", "cpcolor" => "Checkpoint Color (RRGGBBAA)", "cpprecolor" => "Upcoming Color (RRGGBBAA)",
+        "nextcheckcount" => "Visible Checkpoints Per Path", "nextcheck" => "Next Checkpoints", "cpradius" => "Checkpoint Radius (m)", "cpreset" => "Reset From First Checkpoint", "cpfinish" => "Checkpoint Finish Line", "resetmessage" => "Reset Message", _ => name
     };
 
     private string InteractionFieldDefault(XElement element, string name, string fallback)
@@ -185,7 +194,6 @@ public partial class MainWindow
     {
         if (group == "info")
         {
-            AttributesHost.Children.Add(new TextBlock { Text = "Info Range shows/hides instructions independently of Copy. When omitted or invalid, it uses Trigger Range, then 2 meters.", TextWrapping = TextWrapping.Wrap });
             var preview = new Button { Content = "Preview Info · layout only", Margin = new Thickness(0, 6, 0, 6) };
             preview.Click += (_, _) =>
             {
@@ -197,9 +205,6 @@ public partial class MainWindow
         }
         if (group == "copy")
         {
-            AttributesHost.Children.Add(new TextBlock { Text = element.Name.LocalName == "MarkerCategory"
-                ? "Category menu actions use only Copy Text and Confirmation Message. Range and Auto Trigger affect inheriting markers."
-                : "Trigger Range enables Copy. Automatic writes also require Test marker interactions in the overlay.", TextWrapping = TextWrapping.Wrap });
             var test = new Button { Content = "Test Copy", Margin = new Thickness(0, 6, 0, 6) };
             test.Click += (_, _) => TestElementCopy(element);
             AttributesHost.Children.Add(test);

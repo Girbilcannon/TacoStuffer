@@ -74,11 +74,14 @@ public partial class MainWindow
         var item = RowContainer(e.OriginalSource);
         if (item == null || ElementsList.ItemContainerGenerator.ItemFromContainer(item) is not ExplorerRow target) return null;
         if (source.DocumentName == target.DocumentName && source.Key == target.Key) return null;
+        double y = e.GetPosition(item).Y, height = Math.Max(1,item.ActualHeight);
+        var position = target.Kind == "MarkerCategory" && y >= height * .25 && y <= height * .75
+            ? CategoryDropPosition.Child : y < height / 2 ? CategoryDropPosition.Before : CategoryDropPosition.After;
         bool valid = source.Kind == "document" ? target.Kind == "document"
-            : source.Kind == "MarkerCategory" ? target.Kind == "MarkerCategory" && source.Element != null && target.Element != null && CategoryFullPath(source.Element).Contains('.') && CategoryFullPath(target.Element).Contains('.') && CategoryFullPath(source.Element) != CategoryFullPath(target.Element) && !CategoryFullPath(target.Element).StartsWith(CategoryFullPath(source.Element) + '.', StringComparison.Ordinal)
-            : (source.Kind is "POI" or "Trail") && (target.Kind is "POI" or "Trail") && source.DocumentName == target.DocumentName && source.Element != null && target.Element != null && Value(source.Element, "type") == Value(target.Element, "type");
+            : source.Kind == "MarkerCategory" ? target.Kind == "MarkerCategory" && source.Element != null && target.Element != null && CategoryFullPath(source.Element).Contains('.') && (position == CategoryDropPosition.Child || CategoryFullPath(target.Element).Contains('.')) && CategoryFullPath(source.Element) != CategoryFullPath(target.Element) && !CategoryFullPath(target.Element).StartsWith(CategoryFullPath(source.Element) + '.',StringComparison.Ordinal)
+            : (source.Kind is "POI" or "Trail") && target.Kind is "MarkerCategory" or "POI" or "Trail" && target.Element != null
+                && (target.Kind != "MarkerCategory" || position == CategoryDropPosition.Child || CategoryFullPath(target.Element).Contains('.'));
         if (!valid) return null;
-        var position = e.GetPosition(item).Y < item.ActualHeight / 2 ? CategoryDropPosition.Before : CategoryDropPosition.After;
         return (source, target, item, position);
     }
 
@@ -113,15 +116,37 @@ public partial class MainWindow
                 string destination = CategoryFullPath(target.Element!);
                 var changed = CategoryOperations.Move(pages.Select(p => p.Xml).ToList(), old, destination, drop.Position, out string path, categoryOrder);
                 categoryOrder = CategoryOrder.Move(categoryOrder, old, path, destination, drop.Position);
+                var rows = allExplorerRows.Where(r => r.Kind is "MarkerCategory" or "POI" or "Trail").ToList();
+                int first = rows.FindIndex(r => r.RowId == source.RowId), last = first+1;
+                while (last < rows.Count && rows[last].Depth > source.Depth) last++;
+                var block = rows.Skip(first).Take(last-first).ToList();
+                rows.RemoveRange(first,last-first);
+                int at = rows.FindIndex(r => r.RowId == target.RowId) + (drop.Position == CategoryDropPosition.Before ? 0 : 1);
+                rows.InsertRange(Math.Max(0,at),block);
+                outlinerOrder = rows.Select(r => {
+                    if (r.Kind != "MarkerCategory" || r.Element == null) return r.RowId;
+                    string current = CategoryFullPath(r.Element);
+                    return r.DocumentName + "|category:" + (current == old || current.StartsWith(old + '.',StringComparison.Ordinal) ? path + current[old.Length..] : current);
+                }).ToList();
                 ApplyDocuments(changed);
             }
             else
             {
-                var element = source.Element!;
-                element.Remove();
-                if (drop.Position == CategoryDropPosition.Before) target.Element!.AddBeforeSelf(element);
-                else target.Element!.AddAfterSelf(element);
-                WritePages();
+                var selectedIds = ElementsList.SelectedItems.Cast<ExplorerRow>().Select(r => r.RowId).ToHashSet();
+                var moving = selectedIds.Contains(source.RowId)
+                    ? allExplorerRows.Where(r => selectedIds.Contains(r.RowId) && r.Kind is "POI" or "Trail").ToList() : [source];
+                if (moving.Any(r => r.RowId == target.RowId)) throw new InvalidOperationException("Drop outside the dragged selection.");
+                var references = SelectionReferences(moving);
+                var targetReference = SelectionReferences([target]).Single();
+                FlushHistoryCheckpoint();
+                var changed = PackEditing.DropAssets(pages.Select(p => p.Xml).ToList(),references,targetReference,drop.Position,out var identities);
+                var order = allExplorerRows.Where(r => r.Kind is "MarkerCategory" or "POI" or "Trail").Select(r => r.RowId).ToList();
+                var ids = moving.Select(r => r.RowId).ToList(); order.RemoveAll(ids.Contains);
+                int at = order.IndexOf(target.RowId) + (drop.Position == CategoryDropPosition.Before ? 0 : 1);
+                order.InsertRange(Math.Max(0,at),ids);
+                var remapped = identities.ToDictionary(p => pages[p.OldDocument].Name + "|" + p.OldKey,p => pages[p.NewDocument].Name + "|" + p.NewKey);
+                outlinerOrder = order.Select(id => remapped.GetValueOrDefault(id,id)).ToList();
+                ApplyDocuments(changed);
             }
             StatusText.Text = "Element order updated. Save to persist; build uses this order.";
         }

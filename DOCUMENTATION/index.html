@@ -1,0 +1,1003 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="description" content="Taco Stuffer 1.0.7 user guide: projects, marker/trail authoring, attributes, assets, in-game tools, checkpoints, Lua authoring and pack export.">
+    <meta name="theme-color" content="#14181e">
+    <title>Taco Stuffer 1.0.7 — User Guide</title>
+    <link rel="icon" href="favicon.ico">
+    <link rel="stylesheet" href="style.css">
+    <script src="guide.js" defer></script>
+  </head>
+  <body id="top">
+    <a class="skip" href="#main">Skip to guide</a>
+    <button class="scrim" aria-label="Close navigation" hidden></button>
+    <aside class="sidebar" id="navigation">
+      <a class="brand" href="#top"><img src="IMG/tacostuffer-logo.png" width="48" height="48" alt=""><span>TACO STUFFER<small>by: Girbilcannon.8259</small></span></a>
+      <button class="nav-close" aria-label="Close navigation">×</button>
+      <p class="sidebar-label">1.0.7 · USER GUIDE</p>
+      <nav aria-label="Guide contents">
+        <a href="#quickstart"><span>01</span>Your first marker pack</a>
+        <a href="#workspace"><span>02</span>Find your way around</a>
+        <a href="#outliner"><span>03</span>Categories, Outliner &amp; Quick Menu</a>
+        <a href="#attributes"><span>04</span>Bundles, individual fields &amp; inheritance</a>
+        <a href="#assets"><span>05</span>Images, folders &amp; default locations</a>
+        <a href="#trl-import"><span>06</span>Insert an external TRL</a>
+        <a href="#overlay"><span>07</span>Record &amp; edit markers in the game</a>
+        <a href="#toolbar"><span>08</span>The floating toolbar</a>
+        <a href="#trails"><span>09</span>Record, reshape &amp; split trails</a>
+        <a href="#documents"><span>10</span>XML, Lua, Markdown &amp; plain text</a>
+        <a href="#interactions"><span>11</span>Info, Copy, Trigger &amp; behavior tests</a>
+        <a href="#checkpoints"><span>12</span>Build &amp; test checkpoint routes</a>
+        <a href="#preferences"><span>13</span>Tune the preview &amp; shortcuts</a>
+        <a href="#export"><span>14</span>Save, compile &amp; deliver to readers</a>
+        <a href="#in-app"><span>15</span>Play in App &amp; floating code</a>
+        <a href="#reference"><span>16</span>Attribute reference</a>
+        <a href="#troubleshooting"><span>17</span>Troubleshooting &amp; useful reports</a>
+      </nav>
+      <div class="sidebar-bottom">Find a topic with <kbd>Ctrl+F</kbd><br><a href="#troubleshooting">Troubleshooting &amp; current notes</a></div>
+    </aside>
+    <main id="main">
+      <div class="topbar">
+        <button class="nav-toggle" aria-controls="navigation" aria-expanded="false">☰ Contents</button>
+        <span>Guild Wars 2 · Marker Pack Authoring Suite</span>
+        <a href="#reference">Attribute reference ↗</a>
+      </div>
+      <header class="hero">
+        <p class="eyebrow">THE RELEASE GUIDE · VERSION 1.0.7</p>
+        <h1>Build the route.<br><span>Keep the control.</span></h1>
+        <p class="hero-lead">Create markers, record trails, organize your pack and refine it in the game. Code when you want to. Use the controls when you don’t.</p>
+        <div class="chips">
+          <span>Windows x64</span>
+          <span>Markers &amp; editable trails</span>
+          <span>Optional XML &amp; Lua authoring</span>
+        </div>
+        <div class="hero-actions">
+          <a class="button primary" href="#quickstart">Start your first pack →</a>
+          <a class="button" href="#toolbar">Find a toolbar tool</a>
+        </div>
+        <div class="hero-bottom">
+          <span>Project → Record → Refine → Stuff Taco Now!</span>
+          <span>20 screenshots · click any to enlarge</span>
+        </div>
+      </header>
+      <!-- Your first marker pack -->
+      <section id="quickstart" aria-labelledby="quickstart-title">
+        <header class="section-heading">
+          <span class="section-number">01</span>
+          <div>
+            <p class="eyebrow">START HERE</p>
+            <h2 id="quickstart-title">Your first marker pack</h2>
+          </div>
+        </header>
+        <p>Create and organize markers and trails through the interface; use XML when you want direct control. Your editable <code>.cilantro</code> project and the compiled <code>.taco</code> pack serve different purposes.</p>
+        <div class="cards">
+          <article>
+            <h3>Project</h3>
+            <p>Keep the project folder, XML, assets and editable trail data together. This is the version you return to for authoring.</p>
+          </article>
+          <article>
+            <h3>Compiled pack</h3>
+            <p><strong>Stuff Taco Now!</strong> saves and builds the reader-facing <code>.taco</code>. Test it in the reader you intend to support.</p>
+          </article>
+          <article>
+            <h3>Windows application</h3>
+            <p>Run the published <code>TacoStuffer.exe</code>. The application runtime and icon are bundled. Your project files remain separate.</p>
+          </article>
+        </div>
+        <ol class="steps">
+          <li>
+            <h3>Create a project</h3>
+            <p>Choose <b>Project → New…</b> or <kbd>Ctrl+N</kbd>. Enter a project name and parent folder. Set the optional compiled output folder, or leave it blank to use the project's <code>EXPORT</code> folder. Create the project.</p>
+          </li>
+          <li>
+            <h3>Organize a destination</h3>
+            <p>Select a category in the Outliner or Quick Menu. Use <b>+ Category</b> for another group. Display names are the readable labels; internal category names make up XML paths.</p>
+          </li>
+          <li>
+            <h3>Connect to GW2</h3>
+            <p>Start Guild Wars 2, enter a playable map and wait for the connection indicator to show the map. Open a project with an XML document, then click <b>Open Game Overlay</b>. A separate helper addon is not required for the normal telemetry connection.</p>
+          </li>
+          <li>
+            <h3>Record a marker</h3>
+            <p>In the overlay's Markers tab, choose the target XML and category. Move your character to the location and click <b>+ New Marker</b>. Select the recorded marker to edit it.</p>
+          </li>
+          <li>
+            <h3>Choose an image and size</h3>
+            <p>Add <b>Icon (Markers)</b> from Add Attributes. The parent choice adds image and size together. Click <b>Choose Asset</b>, import/select an image, and adjust its size. Use separate child choices when you want only one field.</p>
+          </li>
+          <li>
+            <h3>Save, build, test</h3>
+            <p>Press <kbd>Ctrl+S</kbd>, then <b>Stuff Taco Now!</b>. Check the build result, reload the pack in your target reader, and verify the appearance and placement. Keep the editable project as your source.</p>
+          </li>
+        </ol>
+        <figure class="shot portrait">
+          <a class="shot-link" href="IMG/02_new_project.png" data-enlarge aria-label="Enlarge: Create Project: name, project location and optional compiled-pack output."><img src="IMG/02_new_project.png" width="560" height="633" alt="Create Project: name, project location and optional compiled-pack output." loading="lazy" decoding="async"><span class="enlarge-label">Enlarge ↗</span></a>
+          <figcaption>Create Project: name, project location and optional compiled-pack output.</figcaption>
+        </figure>
+      </section>
+      <!-- Find your way around -->
+      <section id="workspace" aria-labelledby="workspace-title">
+        <header class="section-heading">
+          <span class="section-number">02</span>
+          <div>
+            <p class="eyebrow">THE WORKSPACE</p>
+            <h2 id="workspace-title">Find your way around</h2>
+          </div>
+        </header>
+        <figure class="shot ">
+          <a class="shot-link" href="IMG/01_workspace.png" data-enlarge aria-label="Enlarge: The 1.0.7 workspace: Outliner and Quick Menu at left, XML in the center, Attributes at right."><img src="IMG/01_workspace.png" width="1982" height="1080" alt="The 1.0.7 workspace: Outliner and Quick Menu at left, XML in the center, Attributes at right." loading="lazy" decoding="async"><span class="enlarge-label">Enlarge ↗</span></a>
+          <figcaption>The 1.0.7 workspace: Outliner and Quick Menu at left, XML in the center, Attributes at right.</figcaption>
+        </figure>
+        <div class="table-wrap" tabindex="0">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Area</th>
+                <th scope="col">Use it for</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Project menu</td>
+                <td>Create/open/save projects, create documents, import a pack and open Project Assets.</td>
+              </tr>
+              <tr>
+                <td>Edit menu</td>
+                <td>Undo, Redo, History, Preferences and Project Settings.</td>
+              </tr>
+              <tr>
+                <td>View menu</td>
+                <td>Standalone Overlay, experimental Play in App, Standard Layout and Reset Layout.</td>
+              </tr>
+              <tr>
+                <td>Help menu</td>
+                <td>Open the online Documentation, or choose About for version, developer and notices.</td>
+              </tr>
+              <tr>
+                <td>Outliner / Quick Menu</td>
+                <td>Find project items or work with category organization and visibility.</td>
+              </tr>
+              <tr>
+                <td>Document tabs</td>
+                <td>Edit XML, Lua, Markdown and plain text. Closing a tab does not delete its document.</td>
+              </tr>
+              <tr>
+                <td>Attributes pane</td>
+                <td>Edit local values, inspect inheritance and add controls for selected items.</td>
+              </tr>
+              <tr>
+                <td>Stuff Taco Now!</td>
+                <td>Save and compile the project into its configured output locations.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Resize panels with their dividers. Document tabs support closing, moving between available panes and floating views. Drag a tab away to detach it; use its tab controls/context menu to organize the workspace. <b>View → Reset Layout</b> restores the layout when needed.</p>
+      </section>
+      <!-- Categories, Outliner & Quick Menu -->
+      <section id="outliner" aria-labelledby="outliner-title">
+        <header class="section-heading">
+          <span class="section-number">03</span>
+          <div>
+            <p class="eyebrow">ORGANIZE</p>
+            <h2 id="outliner-title">Categories, Outliner &amp; Quick Menu</h2>
+          </div>
+        </header>
+        <div class="media-split">
+          <div>
+            <h3>Outliner</h3>
+            <p>XML documents contain category hierarchies and their markers/trails. Editable trails expand into segments, then points. Scripts and Docs have their own sections; closed XML documents remain available in the project.</p>
+            <ul>
+              <li>Click <b>+</b> or <b>−</b> to open or close one level.</li>
+              <li><b>Shift-click</b> expands/collapses the branch. Recursive expansion stops at segments so it does not expose thousands of points. Open a segment normally when you need its points.</li>
+              <li><b>Shift/Ctrl</b> and left-drag support multi-selection. Search at the top filters project elements; <kbd>Ctrl+F</kbd> focuses search.</li>
+              <li><b>Middle-drag</b> reorders recorded assets. Drop onto a category to make it their parent; drop above/below another marker or trail for sibling placement. Markers/trails cannot contain children.</li>
+              <li>Use right-click actions to rename, delete, move to another category or move to XML. Available actions depend on the selected item.</li>
+            </ul>
+            <h3>Names that stay organized</h3>
+            <p><code>name</code> is the unique internal asset name and cannot contain spaces. <code>DisplayName</code> is the readable label and can contain spaces. Category references still use internal paths even when dropdowns show indented display names.</p>
+            <p>Batch rename selected recorded markers/trails from the pane or Outliner Rename. Numbering follows hierarchy order. <code>qd_check</code> becomes <code>qd_check01</code>, <code>qd_check02</code>; <code>qd_check_001</code> keeps three-digit padding. A display name such as <code>Checkpoint</code> becomes <code>Checkpoint 01</code>, <code>Checkpoint 02</code>. Existing conflicting internal names are skipped.</p>
+          </div>
+          <figure class="shot portrait">
+            <a class="shot-link" href="IMG/03_outliner.png" data-enlarge aria-label="Enlarge: Outliner categories and recorded markers, with Scripts and Docs sections."><img src="IMG/03_outliner.png" width="325" height="936" alt="Outliner categories and recorded markers, with Scripts and Docs sections." loading="lazy" decoding="async"><span class="enlarge-label">Enlarge ↗</span></a>
+            <figcaption>Outliner categories and recorded markers, with Scripts and Docs sections.</figcaption>
+          </figure>
+        </div>
+        <h3>Quick Menu</h3>
+        <p>The Quick Menu mirrors the pack menu you will see in your pathing tool: its category hierarchy, display names, separators and visibility toggles. Use it to organize and preview how users will navigate your pack.</p>
+        <p>Use category checkboxes to preview visibility. Middle-drag categories: the center of a row makes a child, and its top/bottom makes a sibling. Right-click or press F2 to rename. Separators organize the menu without behaving like ordinary selectable marker categories.</p>
+        <figure class="shot small">
+          <a class="shot-link" href="IMG/04_quick_menu.png" data-enlarge aria-label="Enlarge: Quick Menu: nested display names and category visibility checkboxes."><img src="IMG/04_quick_menu.png" width="309" height="225" alt="Quick Menu: nested display names and category visibility checkboxes." loading="lazy" decoding="async"><span class="enlarge-label">Enlarge ↗</span></a>
+          <figcaption>Quick Menu: nested display names and category visibility checkboxes.</figcaption>
+        </figure>
+      </section>
+      <!-- Bundles, individual fields & inheritance -->
+      <section id="attributes" aria-labelledby="attributes-title">
+        <header class="section-heading">
+          <span class="section-number">04</span>
+          <div>
+            <p class="eyebrow">ATTRIBUTES</p>
+            <h2 id="attributes-title">Bundles, individual fields &amp; inheritance</h2>
+          </div>
+        </header>
+        <p>Select a category, marker or trail and click <b>+ Add Attributes</b>. The list includes built-in controls and project custom definitions. Only applicable controls are offered for the selection.</p>
+        <div class="cards two">
+          <article>
+            <h3>Select a parent bundle</h3>
+            <p>Checking <b>Icon (Markers)</b> adds both <code>iconFile</code> and <code>iconSize</code>, with the normal combined controls. Texture similarly adds texture and trail scale. Independent bundle options are included without adding unrelated action dependencies.</p>
+          </article>
+          <article>
+            <h3>Expand for individual fields</h3>
+            <p>Open the boxed + and select just <b>Icon Size</b>, for example. Only <code>iconSize</code> is added to the XML and local pane. Dependent/custom bundles keep their existing option rules.</p>
+          </article>
+        </div>
+        <p>Checking a child clears its parent choice; checking the parent clears its child choices. You can choose several children together. If an earlier partial bundle is missing controls, select its parent again to complete it without replacing edited values.</p>
+        <div class="duo">
+          <figure class="shot portrait">
+            <a class="shot-link" href="IMG/05_add_attributes.png" data-enlarge aria-label="Enlarge: Add Attributes: parent bundles with expandable individual field choices."><img src="IMG/05_add_attributes.png" width="512" height="776" alt="Add Attributes: parent bundles with expandable individual field choices." loading="lazy" decoding="async"><span class="enlarge-label">Enlarge ↗</span></a>
+            <figcaption>Add Attributes: parent bundles with expandable individual field choices.</figcaption>
+          </figure>
+          <figure class="shot portrait">
+            <a class="shot-link" href="IMG/06_attribute_inheritance.png" data-enlarge aria-label="Enlarge: An inherited iconSize of 1.0 is crossed out because this marker overrides it with 2."><img src="IMG/06_attribute_inheritance.png" width="386" height="912" alt="An inherited iconSize of 1.0 is crossed out because this marker overrides it with 2." loading="lazy" decoding="async"><span class="enlarge-label">Enlarge ↗</span></a>
+            <figcaption>An inherited iconSize of 1.0 is crossed out because this marker overrides it with 2.</figcaption>
+          </figure>
+        </div>
+        <h3>Read inherited values without duplicating them</h3>
+        <p>For markers and trails, the collapsed <b>Inherited attributes</b> list shows effective category values. Local controls show attributes stored on the selected item. A crossed-out inherited name has a local override. Right-click an inherited entry and choose <b>Override</b>, or add that field through Add Attributes. The existing effective value becomes local.</p>
+        <p>For example, set only <code>iconSize</code> on a parent category and give children their own <code>iconFile</code>. POIs can use the category size and the appropriate child icon. Adding an override to multiple objects preserves each object's inherited value rather than forcing one generic default.</p>
+        <p>Remove a local value from its field-label context menu to restore its fallback. A standalone field has its own Remove button; removing a full group removes its grouped local values. Multi-selection applies edits to the selected applicable objects.</p>
+        <aside class="note"><b>Yellow requirement messages are advisory.</b> They identify a missing attribute or preview condition. Adding Copy does not silently create Trigger. Add or inherit the needed settings explicitly; the alert clears when its condition is satisfied.</aside>
+        <p>Color fields include a picker. Standard <code>color</code> uses ARGB (<code>AARRGGBB</code>); checkpoint colors use RGBA (<code>RRGGBBAA</code>). Use the field's format label rather than moving the alpha bytes between formats.</p>
+      </section>
+      <!-- Images, folders & default locations -->
+      <section id="assets" aria-labelledby="assets-title">
+        <header class="section-heading">
+          <span class="section-number">05</span>
+          <div>
+            <p class="eyebrow">PROJECT ASSETS</p>
+            <h2 id="assets-title">Images, folders &amp; default locations</h2>
+          </div>
+        </header>
+        <p>Open <b>Project → Assets…</b>, or click an icon/texture preview marked <b>Choose Asset</b>. The left side shows project asset folders; the right side shows the current folder's files. <b>Filter Search</b> narrows filenames, and the type filter limits the visible asset kinds.</p>
+        <ol>
+          <li>Select a folder and click <b>Import…</b> to bring files into the project.</li>
+          <li>For image attributes, click a thumbnail and <b>Select</b>, or double-click it.</li>
+          <li>Use <b>New Folder…</b> to organize project assets. Middle-drag folders to move their hierarchy; use file multi-selection and drag to move assets between folders.</li>
+          <li>Right-click a folder to rename/delete it or choose <b>Make Default →</b>. Right-click selected files for available delete/import-document actions. Deleting assets affects the project files; read the confirmation and reference warnings.</li>
+        </ol>
+        <figure class="shot ">
+          <a class="shot-link" href="IMG/07_asset_manager.png" data-enlarge aria-label="Enlarge: Project Assets: folder tree, selected icon, filename filter and image thumbnails."><img src="IMG/07_asset_manager.png" width="940" height="680" alt="Project Assets: folder tree, selected icon, filename filter and image thumbnails." loading="lazy" decoding="async"><span class="enlarge-label">Enlarge ↗</span></a>
+          <figcaption>Project Assets: folder tree, selected icon, filename filter and image thumbnails.</figcaption>
+        </figure>
+        <div class="media-split">
+          <div>
+            <h3>Choose default folders</h3>
+            <p>A green star marks a folder used as a default. The green pointer marks the current folder. Right-click a folder to choose one of these roles:</p>
+            <div class="table-wrap" tabindex="0">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Role</th>
+                    <th scope="col">Used for</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Core XML</td>
+                    <td>New core XML document location; the project root is the default.</td>
+                  </tr>
+                  <tr>
+                    <td>Docs</td>
+                    <td>Markdown and plain-text documents.</td>
+                  </tr>
+                  <tr>
+                    <td>Scripts</td>
+                    <td>Lua source documents.</td>
+                  </tr>
+                  <tr>
+                    <td>Icons (markers)</td>
+                    <td>Starting folder for marker image selection.</td>
+                  </tr>
+                  <tr>
+                    <td>Textures (trails)</td>
+                    <td>Starting folder for trail texture selection.</td>
+                  </tr>
+                  <tr>
+                    <td>Trail Data</td>
+                    <td>TRL files and trail insertion; DATA is the initial default.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <figure class="shot small">
+            <a class="shot-link" href="IMG/08_asset_folder_menu.png" data-enlarge aria-label="Enlarge: Folder context menu: Make Default roles, Rename Folder and Delete Folder."><img src="IMG/08_asset_folder_menu.png" width="413" height="360" alt="Folder context menu: Make Default roles, Rename Folder and Delete Folder." loading="lazy" decoding="async"><span class="enlarge-label">Enlarge ↗</span></a>
+            <figcaption>Folder context menu: Make Default roles, Rename Folder and Delete Folder.</figcaption>
+          </figure>
+        </div>
+        <p>The initial image location is <code>TEXTURES</code>; separate icon/texture defaults are optional. Project storage such as <code>EDITABLE_TRAILS</code> is managed by the application. Do not treat it as an ordinary image folder.</p>
+        <p>The manager reflects files in its displayed project folders. Documents need an explicit import/adoption into the project to appear as editable Outliner documents; placing a text file on disk alone does not register an editor document.</p>
+        <aside class="note warm"><b>Known 1.0.7 issue:</b> <b>Add Existing Folder…</b> can open the folder picker without adding the chosen folder to the manager. This is awaiting a patch. Use the existing displayed/default folders and Import/New Folder workflows in the meantime.</aside>
+      </section>
+      <!-- Insert an external TRL -->
+      <section id="trl-import" aria-labelledby="trl-import-title">
+        <header class="section-heading">
+          <span class="section-number">06</span>
+          <div>
+            <p class="eyebrow">REUSE A ROUTE</p>
+            <h2 id="trl-import-title">Insert an external TRL</h2>
+          </div>
+        </header>
+        <p>You can bring a trail into the project without importing its entire source pack.</p>
+        <ol class="steps compact">
+          <li>Open Project Assets, select your Trail Data folder and use <b>Import…</b> to choose one or more <code>.trl</code> files.</li>
+          <li>Select the imported files and choose a destination category from the indented display-name dropdown beside <b>Insert</b>.</li>
+          <li>Leave <b>Make editable</b> checked to convert supported TRLs to editable segments/points. Clear it when you want to keep binary trail references without point editing.</li>
+          <li>Click <b>Insert</b>. The tool creates the trail XML entries and project paths for the selected category. Select the inserted trail to choose its texture and style.</li>
+        </ol>
+        <figure class="shot ">
+          <a class="shot-link" href="IMG/09_insert_trails.png" data-enlarge aria-label="Enlarge: TRL insertion: selected file, destination category, Make editable and Insert."><img src="IMG/09_insert_trails.png" width="940" height="680" alt="TRL insertion: selected file, destination category, Make editable and Insert." loading="lazy" decoding="async"><span class="enlarge-label">Enlarge ↗</span></a>
+          <figcaption>TRL insertion: selected file, destination category, Make editable and Insert.</figcaption>
+        </figure>
+        <p>The <code>trailData</code> field near the top of a trail's Attributes pane controls its final TRL path/name for compile and lookup. Keep it project-relative and valid. Changing it does not rename the editable trail's internal point identities.</p>
+      </section>
+      <!-- Record & edit markers in the game -->
+      <section id="overlay" aria-labelledby="overlay-title">
+        <header class="section-heading">
+          <span class="section-number">07</span>
+          <div>
+            <p class="eyebrow">STANDALONE OVERLAY</p>
+            <h2 id="overlay-title">Record &amp; edit markers in the game</h2>
+          </div>
+        </header>
+        <p>The overlay requires a connected GW2 client on a playable map, an open project and an XML authoring target. <b>Open Game Overlay</b> opens recording controls separately from the game-bound marker/trail rendering.</p>
+        <figure class="shot ">
+          <a class="shot-link" href="IMG/10_game_overlay.png" data-enlarge aria-label="Enlarge: Overlay controls alongside live markers: recording target at left, recorded category hierarchy at right."><img src="IMG/10_game_overlay.png" width="1655" height="899" alt="Overlay controls alongside live markers: recording target at left, recorded category hierarchy at right." loading="lazy" decoding="async"><span class="enlarge-label">Enlarge ↗</span></a>
+          <figcaption>Overlay controls alongside live markers: recording target at left, recorded category hierarchy at right.</figcaption>
+        </figure>
+        <ul>
+          <li>Choose the target XML and category before recording. Double-clicking a category in the right hierarchy updates the target selection.</li>
+          <li><b>+ New Marker</b> records the character position with map, GUID and identity values. <b>Reposition</b> moves the selected marker to the character.</li>
+          <li>Click a rendered marker to select it. A brief empty-space click clears selection; camera drags/held movement gestures should retain it.</li>
+          <li>Use Shift/Ctrl clicks for multi-selection. Drag a manipulator handle to move selected items. For trail-point groups, rotation rings use their average pivot.</li>
+          <li>Rename recorded markers/trails from the overlay's context menu or double-click rename dialog. Edit their internal and display names without returning to the main editor.</li>
+        </ul>
+        <figure class="shot ">
+          <a class="shot-link" href="IMG/12_marker_editing.png" data-enlarge aria-label="Enlarge: A selected marker with its manipulator and labeled effective range rings."><img src="IMG/12_marker_editing.png" width="1549" height="737" alt="A selected marker with its manipulator and labeled effective range rings." loading="lazy" decoding="async"><span class="enlarge-label">Enlarge ↗</span></a>
+          <figcaption>A selected marker with its manipulator and labeled effective range rings.</figcaption>
+        </figure>
+        <p>Enable <b>Show Marker Range</b> in Visual Settings to draw thin labeled rings for selected markers' effective ranges, including inherited values. Rings can appear in the world, map and minimap. Trigger/Info/checkpoint ranges are meters; Fade values use game inches and are converted for ring geometry. The Fade label identifies camera-distance semantics.</p>
+        <h3>Move and minimize controls</h3>
+        <p>Resize the control window and move it outside the game bounds. Rendering stays aligned to the game. In standalone mode the selected main window can sit above the overlay; overlay controls remain above the toolbar, which remains above Info/Copy frames. Other applications hide the overlay presentation.</p>
+        <p>Minimize hides the large controls but keeps the rendering session and separate toolbar active. Standalone mode leaves a small <b>TS</b> restore button near the top right. In Play in App, <b>Open Overlay</b> turns green while the controls are minimized; click it to restore. Closing the overlay ends its session.</p>
+      </section>
+      <!-- The floating toolbar -->
+      <section id="toolbar" aria-labelledby="toolbar-title">
+        <header class="section-heading">
+          <span class="section-number">08</span>
+          <div>
+            <p class="eyebrow">TOOLS AT A GLANCE</p>
+            <h2 id="toolbar-title">The floating toolbar</h2>
+          </div>
+        </header>
+        <figure class="shot ">
+          <a class="shot-link" href="IMG/11_overlay_toolbar.png" data-enlarge aria-label="Enlarge: Floating toolbar at the bottom of the game; an active tool is highlighted yellow."><img src="IMG/11_overlay_toolbar.png" width="1087" height="745" alt="Floating toolbar at the bottom of the game; an active tool is highlighted yellow." loading="lazy" decoding="async"><span class="enlarge-label">Enlarge ↗</span></a>
+          <figcaption>Floating toolbar at the bottom of the game; an active tool is highlighted yellow.</figcaption>
+        </figure>
+        <p>Click <b>Open Toolbar</b> in the overlay controls. Drag its left grip to move it; its position is remembered. Gray is inactive, green is hover, and Taco yellow indicates an active tool/test. Hover an icon for its tooltip. The toolbar stays available when the control window is minimized.</p>
+        <div class="table-wrap" tabindex="0">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Section / tool</th>
+                <th scope="col">What it does</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Testing · Marker Interactions</td>
+                <td>Enables preview interaction/behavior actions and automatic copy tests. Click again to turn it off.</td>
+              </tr>
+              <tr>
+                <td>Testing · Checkpoints</td>
+                <td>Starts or cancels temporary checkpoint testing; select a starting checkpoint first.</td>
+              </tr>
+              <tr>
+                <td>Edit · Selection</td>
+                <td>Normal selection/manipulator editing. Shift adds or ranges point selections; Ctrl toggles.</td>
+              </tr>
+              <tr>
+                <td>Edit · Marquee</td>
+                <td>Left-drag a selection box without orbiting the camera. Shift adds; Ctrl toggles. Esc exits.</td>
+              </tr>
+              <tr>
+                <td>Edit · Insert Point</td>
+                <td>Click an editable rendered trail to add a point along its clicked edge. Tool stays active.</td>
+              </tr>
+              <tr>
+                <td>Edit · Remove Point</td>
+                <td>Click a point to delete it and reconnect its surviving neighbors.</td>
+              </tr>
+              <tr>
+                <td>Edit · Split Segment</td>
+                <td>Click an interior point to delete it and leave a gap, creating separate segments. No confirmation prompt; Undo is available.</td>
+              </tr>
+              <tr>
+                <td>Edit · Merge Segments</td>
+                <td>Choose endpoints from two different editable segments on the same map, then Enter. The earlier Outliner segment joins to the later one, preserving their point flow and the earlier trail's styling.</td>
+              </tr>
+              <tr>
+                <td>Edit · Reverse Segment</td>
+                <td>Click any point to reverse that entire segment. Coordinates and IDs stay stable; point order changes. Undo is available.</td>
+              </tr>
+              <tr>
+                <td>Trails · Start / Pause / Continue</td>
+                <td>Use the existing selected trail/recording target. Start requires a trail; Continue resumes paused/resumable recording.</td>
+              </tr>
+              <tr>
+                <td>Trails · New Segment / Stop</td>
+                <td>Pause first to start another segment. Stop finishes recording.</td>
+              </tr>
+              <tr>
+                <td>Markers · Add / Reposition</td>
+                <td>Place a marker at the character, or move the selected marker to the character.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <aside class="note"><b>Persistent edit tools:</b> yellow screen text/cursor badges identify the active mode. Press <kbd>Esc</kbd> to return to Selection. Undo applies to the editing operations. Starting a trail-edit mode stops recording/checkpoint testing; starting recording or checkpoint testing exits the edit tool.</aside>
+      </section>
+      <!-- Record, reshape & split trails -->
+      <section id="trails" aria-labelledby="trails-title">
+        <header class="section-heading">
+          <span class="section-number">09</span>
+          <div>
+            <p class="eyebrow">EDITABLE TRAILS</p>
+            <h2 id="trails-title">Record, reshape &amp; split trails</h2>
+          </div>
+        </header>
+        <ol class="steps compact">
+          <li>Choose the XML/category target in the overlay's Trails tab and click <b>+ New Trail</b>.</li>
+          <li>Click <b>Start</b> and move through the route. Use <b>Pause</b> before repositioning the character without drawing a connection.</li>
+          <li>Use <b>Continue</b> to resume the segment, or <b>Start New Segment</b> while paused to begin a disconnected run. <b>Stop</b> ends recording.</li>
+          <li>Add a Texture bundle, select a trail texture and set its scale. Check its map/world appearance and direction.</li>
+        </ol>
+        <figure class="shot ">
+          <a class="shot-link" href="IMG/13_trail_editing.png" data-enlarge aria-label="Enlarge: Trail-point editing with a selected group of points and its movement/rotation manipulator."><img src="IMG/13_trail_editing.png" width="1454" height="851" alt="Trail-point editing with a selected group of points and its movement/rotation manipulator." loading="lazy" decoding="async"><span class="enlarge-label">Enlarge ↗</span></a>
+          <figcaption>Trail-point editing with a selected group of points and its movement/rotation manipulator.</figcaption>
+        </figure>
+        <h3>Density and point editing</h3>
+        <p>The smoothness/density control ranges from 1 to 10; higher recording values keep more samples. Existing segment adjustment works on a segment selection. Interpolation can smooth retained data but cannot recreate a route detail that was never recorded.</p>
+        <p>Expand a segment to reveal its points. Shift selects a range; Ctrl combines selections. Move selected points together with the manipulator. Parent selection does not automatically select every point.</p>
+        <p>The point-delete confirmation offers <b>Delete</b> to reconnect survivors, or <b>Delete and Split Segment</b> to leave gaps at the deleted stretches. The toolbar also provides persistent insert/remove/split/merge/reverse tools.</p>
+        <figure class="shot ">
+          <a class="shot-link" href="IMG/14_trail_insert_tool.png" data-enlarge aria-label="Enlarge: Insert Trail Points active, with its screen instruction and cursor badge."><img src="IMG/14_trail_insert_tool.png" width="843" height="773" alt="Insert Trail Points active, with its screen instruction and cursor badge." loading="lazy" decoding="async"><span class="enlarge-label">Enlarge ↗</span></a>
+          <figcaption>Insert Trail Points active, with its screen instruction and cursor badge.</figcaption>
+        </figure>
+        <p>Split preserves the original hierarchy flow. Merge connects the earlier segment's end to the later segment's start; click order does not silently flip either route. Use Reverse Segment explicitly when needed. An emptied donor trail may remain in XML to preserve GUID/script references. Review the result and Undo if it is not what you intended.</p>
+        <aside class="note warm"><b>Large point lists:</b> expanding thousands of points can make Outliner hover/interaction sluggish in this build. Collapse point branches when finished editing; a performance fix is pending.</aside>
+      </section>
+      <!-- XML, Lua, Markdown & plain text -->
+      <section id="documents" aria-labelledby="documents-title">
+        <header class="section-heading">
+          <span class="section-number">10</span>
+          <div>
+            <p class="eyebrow">CODE IS OPTIONAL</p>
+            <h2 id="documents-title">XML, Lua, Markdown &amp; plain text</h2>
+          </div>
+        </header>
+        <p>Choose <b>Project → New Document</b> and select XML, LUA, Markdown or Plain Text. XML initially uses the project root; Lua uses <code>scripts</code>; Markdown/text use <code>DOCS</code>. Asset folder defaults can change those destinations. New XML documents use the project's shared pack heading; edit category information afterward if a distinct heading is intentional.</p>
+        <div class="table-wrap" tabindex="0">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Document</th>
+                <th scope="col">Editing and project behavior</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>XML</td>
+                <td>Syntax-colored editing stays synchronized with selected elements. A dim working-line indicator identifies the active element/line without replacing your text selection. Right-click a line for Add Comment Before / After.</td>
+              </tr>
+              <tr>
+                <td>Lua</td>
+                <td>Syntax-colored authoring and pack packaging. Taco Stuffer does not execute or simulate Lua.</td>
+              </tr>
+              <tr>
+                <td>Markdown</td>
+                <td>Formatting toolbar and a Preview window for the rendered document.</td>
+              </tr>
+              <tr>
+                <td>Plain text</td>
+                <td>Simple unformatted editing for notes and supporting files.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <figure class="shot ">
+          <a class="shot-link" href="IMG/17_markdown.png" data-enlarge aria-label="Enlarge: Markdown authoring with its formatting toolbar and rendered preview window."><img src="IMG/17_markdown.png" width="2047" height="1071" alt="Markdown authoring with its formatting toolbar and rendered preview window." loading="lazy" decoding="async"><span class="enlarge-label">Enlarge ↗</span></a>
+          <figcaption>Markdown authoring with its formatting toolbar and rendered preview window.</figcaption>
+        </figure>
+        <p>Right-click documents in the Outliner for rename/delete, including closed documents; F2 supports rename. Renaming/deleting files does not rewrite references inside your scripts/text. Use Save Project to commit document changes to disk.</p>
+        <h3>Lua script hooks</h3>
+        <p>The Script attribute tools help select project libraries/functions and assign <code>script-trigger</code>, <code>script-focus</code>, <code>script-tick</code>, <code>script-filter</code> and <code>script-once</code>. Hook values are function calls, not filenames. The helper can create/open a <code>pack.lua</code> loader; review its require paths and load order.</p>
+        <p>Execution requires a compatible Blish HUD Pathing Lua runtime. A successful Taco Stuffer preview or compile is not a script execution test. Other readers do not automatically gain Lua support from the presence of those files.</p>
+        <h3>Undo, history and tabs</h3>
+        <p>Use <kbd>Ctrl+Z</kbd>, <kbd>Ctrl+Shift+Z</kbd> or <b>Edit → History…</b> to review supported edits. Save the project regularly. Undo history is an editing aid, not a replacement for a backup of project files or externally modified assets.</p>
+      </section>
+      <!-- Info, Copy, Trigger & behavior tests -->
+      <section id="interactions" aria-labelledby="interactions-title">
+        <header class="section-heading">
+          <span class="section-number">11</span>
+          <div>
+            <p class="eyebrow">INTERACTIVE MARKERS</p>
+            <h2 id="interactions-title">Info, Copy, Trigger &amp; behavior tests</h2>
+          </div>
+        </header>
+        <h3>Info</h3>
+        <p><code>info</code> contains instructions and supports multiple lines. <code>infoRange</code> is the display radius in meters; lowercase <code>inforange</code> is accepted. When omitted, the radius falls back to effective <code>triggerRange</code>, then 2 meters. Enable <b>Show marker information</b> in Visual Settings. The layout-preview button checks appearance, not proximity.</p>
+        <h3>Copy and shared Trigger settings</h3>
+        <p><code>copy</code> is clipboard text. <code>copy-message</code> is the confirmation; <code>{0}</code> inserts copied text. Trigger Range and Auto Trigger are independent fields in the Trigger group. They are shared by actions that use them and do not require Copy merely to exist.</p>
+        <p>For proximity marker actions, configure <code>triggerRange</code> in meters and choose automatic or manual interaction. Bind <b>Interact with nearby marker</b> in Custom Keybinds for manual tests. Category/separator Copy uses its text/message without a proximity requirement.</p>
+        <p>Clipboard permissions are <b>Always</b>, <b>Only when interacted with</b> or <b>Never</b>. Automatic copy tests additionally require Test Marker Interactions and the appropriate permission. Copying only puts text on the clipboard; it does not send chat or teleport.</p>
+        <h3>Other actions</h3>
+        <p>Show/Hide and Toggle reference categories. Behavior selects supported activation/persistence modes; its preview reset action clears test behavior state. Mount, visibility and other controls can also affect whether an item is visible. Requirement messages point out missing ranges, targets or test conditions.</p>
+        <aside class="note">Info visibility, clipboard permission, interaction keys and HUD dismissal are application settings/UI behavior. They are not extra pack XML attributes. Preview tests do not establish compatibility with every target reader.</aside>
+      </section>
+      <!-- Build & test checkpoint routes -->
+      <section id="checkpoints" aria-labelledby="checkpoints-title">
+        <header class="section-heading">
+          <span class="section-number">12</span>
+          <div>
+            <p class="eyebrow">TAQUITO CHECKPOINTS</p>
+            <h2 id="checkpoints-title">Build &amp; test checkpoint routes</h2>
+          </div>
+        </header>
+        <p>Checkpoint attributes describe a linked route for Taquito. Taco Stuffer supplies authoring controls and a temporary checkpoint test mode. These custom fields are not assumed to execute in other pathing readers.</p>
+        <ol class="steps compact">
+          <li>Create checkpoint markers with unique GUIDs. Add <b>Checkpoint (Taquito Only)</b> and enable <b>Is Checkpoint</b>.</li>
+          <li>Choose current/upcoming colors, radius and visible look-ahead count.</li>
+          <li>Use <b>Choose next checkpoints…</b> to link the next marker/finish GUID. Multiple links allow a fork.</li>
+          <li>Select the first checkpoint and activate <b>Test Checkpoints</b> in the toolbar. If testing starts inside the first region, step out and re-enter to arm a clean crossing.</li>
+          <li>Walk the route. Complete a checkpoint to hide it and arm its next link(s). Click Test Checkpoints again to cancel the temporary test.</li>
+        </ol>
+        <figure class="shot ">
+          <a class="shot-link" href="IMG/15_checkpoint_setup.png" data-enlarge aria-label="Enlarge: Checkpoint authoring: choose the next checkpoint or finish node from project GUIDs."><img src="IMG/15_checkpoint_setup.png" width="2057" height="1077" alt="Checkpoint authoring: choose the next checkpoint or finish node from project GUIDs." loading="lazy" decoding="async"><span class="enlarge-label">Enlarge ↗</span></a>
+          <figcaption>Checkpoint authoring: choose the next checkpoint or finish node from project GUIDs.</figcaption>
+        </figure>
+        <div class="table-wrap" tabindex="0">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Field</th>
+                <th scope="col">Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>isCheckpoint</code></td>
+                <td>Boolean, written true/false. Enables a checkpoint node.</td>
+              </tr>
+              <tr>
+                <td><code>cpColor</code> / <code>cpPreColor</code></td>
+                <td>Current/upcoming colors in RRGGBBAA; alpha is last. Use Choose color rather than rearranging ordinary ARGB values.</td>
+              </tr>
+              <tr>
+                <td><code>nextCheck</code></td>
+                <td>One or more next GUIDs, comma-separated. Use the chooser to avoid typing mistakes.</td>
+              </tr>
+              <tr>
+                <td><code>nextCheckCount</code></td>
+                <td>Nonnegative look-ahead depth. A value of 2 follows two links along each fork path.</td>
+              </tr>
+              <tr>
+                <td><code>cpRadius</code></td>
+                <td>Checkpoint contact radius in meters.</td>
+              </tr>
+              <tr>
+                <td><code>cpFinish</code></td>
+                <td>Independent true/false finish flag. Can be added to a marker or trail; a short two-point trail can act as a finish line.</td>
+              </tr>
+              <tr>
+                <td><code>cpReset</code></td>
+                <td>The first checkpoint GUID for resetting the linked course. The Reset checkbox enables these controls; this value is a GUID, not a boolean.</td>
+              </tr>
+              <tr>
+                <td><code>resetMessage</code></td>
+                <td>Optional reset confirmation text. Disable/omit the message when no popup is wanted.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <figure class="shot ">
+          <a class="shot-link" href="IMG/16_checkpoint_test.png" data-enlarge aria-label="Enlarge: Checkpoint testing in the game with the toolbar test button active."><img src="IMG/16_checkpoint_test.png" width="1426" height="837" alt="Checkpoint testing in the game with the toolbar test button active." loading="lazy" decoding="async"><span class="enlarge-label">Enlarge ↗</span></a>
+          <figcaption>Checkpoint testing in the game with the toolbar test button active.</figcaption>
+        </figure>
+        <h3>Reset markers and finish lines</h3>
+        <p>A dedicated reset marker does not need <b>Is Checkpoint</b> enabled. Enable its <b>Reset</b> checkbox, choose the first checkpoint and configure Trigger/manual interaction or Auto Trigger. Checkpoint Finish Line is a separate Add Attributes entry.</p>
+        <p>Turning off Is Checkpoint removes its checkpoint-specific option fields from XML while keeping reset controls independent. The ordinary <code>resetguid</code> control resets explicit behavior GUID targets; <code>cpReset</code> identifies a checkpoint route from its first GUID. Keep GUIDs unique and check links after copying/moving nodes.</p>
+      </section>
+      <!-- Tune the preview & shortcuts -->
+      <section id="preferences" aria-labelledby="preferences-title">
+        <header class="section-heading">
+          <span class="section-number">13</span>
+          <div>
+            <p class="eyebrow">PREFERENCES</p>
+            <h2 id="preferences-title">Tune the preview &amp; shortcuts</h2>
+          </div>
+        </header>
+        <p>Open <b>Edit → Preferences…</b>. Visual Settings affect the authoring preview; they do not rewrite pack sizes. Several controls update live while the dialog is open. Save Preferences to retain your choices; Cancel discards the dialog changes.</p>
+        <figure class="shot portrait">
+          <a class="shot-link" href="IMG/18_preferences_visual.png" data-enlarge aria-label="Enlarge: Visual Settings: marker names, range rings, trail selection and minimized-overlay glow."><img src="IMG/18_preferences_visual.png" width="650" height="665" alt="Visual Settings: marker names, range rings, trail selection and minimized-overlay glow." loading="lazy" decoding="async"><span class="enlarge-label">Enlarge ↗</span></a>
+          <figcaption>Visual Settings: marker names, range rings, trail selection and minimized-overlay glow.</figcaption>
+        </figure>
+        <div class="table-wrap" tabindex="0">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Setting</th>
+                <th scope="col">Effect</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Show Marker Names</td>
+                <td>Enables name labels. Only Show For Selected limits them to selected markers; both choices default on.</td>
+              </tr>
+              <tr>
+                <td>Marker Name Distance Threshold</td>
+                <td>Limits name visibility by player distance in meters, with live preview.</td>
+              </tr>
+              <tr>
+                <td>Show Marker Range</td>
+                <td>Shows effective range rings for selected markers in the world/map/minimap; defaults off.</td>
+              </tr>
+              <tr>
+                <td>Trail Overlay Selection</td>
+                <td>An ordinary ribbon click selects the whole trail, its segment or the nearest point. Modifier-based point selection and dedicated edit tools remain available.</td>
+              </tr>
+              <tr>
+                <td>Enable Overlay minimize glow</td>
+                <td>Pulses the standalone TS restore button to help locate minimized controls.</td>
+              </tr>
+              <tr>
+                <td>Preview fade around player / between player and camera</td>
+                <td>Optional authoring fades; canFade=0 bypasses these optional effects. Explicit Fade Near/Far still applies.</td>
+              </tr>
+              <tr>
+                <td>Show marker information / Marker clipboard</td>
+                <td>Controls Info HUD visibility and clipboard permissions.</td>
+              </tr>
+              <tr>
+                <td>World / map / minimap multipliers</td>
+                <td>Independent application preview scaling for markers and trail widths; exported XML values stay unchanged.</td>
+              </tr>
+              <tr>
+                <td>Map trail style</td>
+                <td>Choose textured TacO-style or solid Blish-style map preview.</td>
+              </tr>
+              <tr>
+                <td>Game</td>
+                <td>Choose the GW2 executable used by Play in App.</td>
+              </tr>
+              <tr>
+                <td>Custom Keybinds</td>
+                <td>Assign recording, marker, category and interaction actions. Choose unused combinations; shortcuts can also reach GW2.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Scroll the Visual Settings pane for controls below those pictured. Defaults restores preference defaults; check your desired settings before saving.</p>
+      </section>
+      <!-- Save, compile & deliver to readers -->
+      <section id="export" aria-labelledby="export-title">
+        <header class="section-heading">
+          <span class="section-number">14</span>
+          <div>
+            <p class="eyebrow">PROJECT SETTINGS &amp; OUTPUT</p>
+            <h2 id="export-title">Save, compile &amp; deliver to readers</h2>
+          </div>
+        </header>
+        <p><b>Edit → Project Settings…</b> changes the main compiled output folder and two optional alternate marker-pack locations. <b>Stuff Taco Now!</b> writes the same pack to each configured unique location. Blank main output uses the project's <code>EXPORT</code> folder; empty/duplicate alternate locations are skipped.</p>
+        <figure class="shot portrait">
+          <a class="shot-link" href="IMG/19_project_settings.png" data-enlarge aria-label="Enlarge: Project Settings: main output, two alternate locations and documentation inclusion."><img src="IMG/19_project_settings.png" width="606" height="621" alt="Project Settings: main output, two alternate locations and documentation inclusion." loading="lazy" decoding="async"><span class="enlarge-label">Enlarge ↗</span></a>
+          <figcaption>Project Settings: main output, two alternate locations and documentation inclusion.</figcaption>
+        </figure>
+        <p>Use these destinations to test one build in several installed readers without manually copying it every time. Save Project after changing project settings. Reload the pack in the reader after compilation; file output alone does not guarantee that reader has refreshed it.</p>
+        <p><b>Include documentation in compiled .taco</b> controls Markdown and plain-text project documents. Turn it off to keep build notes in the project only. Lua libraries are packaged separately; this switch does not enable or disable Lua execution.</p>
+        <h3>Import a complete pack</h3>
+        <p>Choose <b>Project → Import .taco File…</b>. The importer retains project-relative assets and supported XML/script content. Choose editable trail conversion when you need point editing; binary references can be kept for faithful asset preservation. Inspect missing-file warnings and verify imported resources before changing or distributing the pack.</p>
+        <h3>Compile checks</h3>
+        <ul>
+          <li>Confirm every item has the intended category, map and required image/texture/trail reference.</li>
+          <li>Review compile messages. A fallback image or empty missing trail is not a recovered resource; inspect any build diagnostic such as <code>__TacoStuffer_TestBuild.txt</code> when present.</li>
+          <li>Test world, map/minimap, interactions and Lua in the actual supported reader. Taquito-specific checkpoint/sticky controls and Blish Lua need their respective runtimes.</li>
+          <li>Back up the full authoring project before publishing a pack.</li>
+        </ul>
+      </section>
+      <!-- Play in App & floating code -->
+      <section id="in-app" aria-labelledby="in-app-title">
+        <header class="section-heading">
+          <span class="section-number">15</span>
+          <div>
+            <p class="eyebrow">EXPERIMENTAL WORKSPACE</p>
+            <h2 id="in-app-title">Play in App &amp; floating code</h2>
+          </div>
+        </header>
+        <p><b>View → Play in App (experimental)</b> hosts the game in the editing workspace. For ordinary recording you can keep GW2 standalone instead.</p>
+        <ol>
+          <li>Close an already running client before using <b>Launch Windowed</b> for the hosted session.</li>
+          <li>Choose the executable in <b>Game Preferences…</b>, launch, and click Play in the separate launcher. The game render window attaches to the workspace.</li>
+          <li>Open Overlay and Open Toolbar as needed. Minimized overlay controls leave the game rendering and toolbar active; the Open Overlay button turns green.</li>
+          <li>Use <b>Show Code</b> to reveal the code panel, resize it or float it onto another monitor.</li>
+        </ol>
+        <figure class="shot ">
+          <a class="shot-link" href="IMG/20_play_in_app.png" data-enlarge aria-label="Enlarge: Play in App: hosted game with project hierarchy and authoring controls around it."><img src="IMG/20_play_in_app.png" width="2560" height="1080" alt="Play in App: hosted game with project hierarchy and authoring controls around it." loading="lazy" decoding="async"><span class="enlarge-label">Enlarge ↗</span></a>
+          <figcaption>Play in App: hosted game with project hierarchy and authoring controls around it.</figcaption>
+        </figure>
+        <p>Quit the hosted game normally before returning to <b>Standard Layout</b>. The button/menu becomes available when the session is closed. <b>Force Close Game</b> terminates a stuck session; it is not the normal layout-switch command. Closing Taco Stuffer while hosting first handles the active game session.</p>
+      </section>
+      <!-- Attribute reference -->
+      <section id="reference" aria-labelledby="reference-title">
+        <header class="section-heading">
+          <span class="section-number">16</span>
+          <div>
+            <p class="eyebrow">QUICK LOOKUP</p>
+            <h2 id="reference-title">Attribute reference</h2>
+          </div>
+        </header>
+        <p>Use this as a field index for the built-in controls. Individual choices are available for independent bundles; some dependent options stay grouped. The pane's labels, pickers and requirement messages are the primary authoring interface. Reader-specific support still needs testing.</p>
+        <div class="table-wrap" tabindex="0">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Control</th>
+                <th scope="col">XML fields · catalog starting values</th>
+                <th scope="col">Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Alpha</strong></td>
+                <td><code>alpha</code> <span class="dim">1.0</span></td>
+                <td>Overall opacity.</td>
+              </tr>
+              <tr>
+                <td><strong>Animspeed</strong></td>
+                <td><code>animSpeed</code> <span class="dim">0</span></td>
+                <td>Trail texture animation speed.</td>
+              </tr>
+              <tr>
+                <td><strong>Color</strong></td>
+                <td><code>color</code> <span class="dim">FFFFFFFF</span></td>
+                <td>Tint; 8-digit standard color is AARRGGBB.</td>
+              </tr>
+              <tr>
+                <td><strong>Fade</strong></td>
+                <td><code>fadeNear</code> <span class="dim">3000</span><br><code>fadeFar</code> <span class="dim">3500</span></td>
+                <td>Camera-distance fade thresholds in game inches: 3000 ≈ 76.2 m; 3500 ≈ 88.9 m.</td>
+              </tr>
+              <tr>
+                <td><strong>Heightoffset</strong></td>
+                <td><code>heightOffset</code> <span class="dim">0</span></td>
+                <td>Vertical visual offset; coordinates are not moved by this field.</td>
+              </tr>
+              <tr>
+                <td><strong>Icon (Markers)</strong></td>
+                <td><code>iconFile</code> <span class="dim">TEXTURES/marker.png</span><br><code>iconSize</code> <span class="dim">1.0</span></td>
+                <td>Marker image plus size. Supports independent image/size authoring.</td>
+              </tr>
+              <tr>
+                <td><strong>Separator</strong></td>
+                <td><code>isSeparator</code> <span class="dim">1</span></td>
+                <td>Menu separator/category presentation.</td>
+              </tr>
+              <tr>
+                <td><strong>Mapdisplaysize</strong></td>
+                <td><code>mapDisplaySize</code> <span class="dim">20</span><br><code>scaleOnMapWithZoom</code> <span class="dim">true</span></td>
+                <td>Map/minimap marker sizing and zoom scaling.</td>
+              </tr>
+              <tr>
+                <td><strong>Position</strong></td>
+                <td><code>xpos</code> <span class="dim">0</span><br><code>ypos</code> <span class="dim">0</span><br><code>zpos</code> <span class="dim">0</span></td>
+                <td>x/y/z coordinates; Y is vertical, X/Z horizontal. Optional Add Attributes choice is category-only; markers record coordinates automatically.</td>
+              </tr>
+              <tr>
+                <td><strong>Rotate</strong></td>
+                <td><code>rotate-x</code> <span class="dim">0</span><br><code>rotate-y</code> <span class="dim">0</span><br><code>rotate-z</code> <span class="dim">0</span></td>
+                <td>Axis-specific marker rotation.</td>
+              </tr>
+              <tr>
+                <td><strong>Sticky (For Taquito Only)</strong></td>
+                <td><code>screenSticky</code> <span class="dim">true</span><br><code>stickyDistance</code> <span class="dim">300</span><br><code>stickyHideOriginal</code> <span class="dim">true</span><br><code>stickyX</code> <span class="dim">0</span><br><code>stickyY</code> <span class="dim">0</span><br><code>stickyScale</code> <span class="dim">1.0</span></td>
+                <td>Taquito screen-sticky presentation, range and original-world-marker behavior.</td>
+              </tr>
+              <tr>
+                <td><strong>Texture (Trails)</strong></td>
+                <td><code>texture</code> <span class="dim">TEXTURES/trail.png</span><br><code>trailScale</code> <span class="dim">1.0</span></td>
+                <td>Trail texture plus scale. Supports independent texture/scale authoring.</td>
+              </tr>
+              <tr>
+                <td><strong>Visibility</strong></td>
+                <td><code>inGameVisibility</code> <span class="dim">1</span><br><code>miniMapVisibility</code> <span class="dim">1</span><br><code>mapVisibility</code> <span class="dim">1</span></td>
+                <td>World, minimap and full-map visibility controls.</td>
+              </tr>
+              <tr>
+                <td><strong>Info</strong></td>
+                <td><code>info</code> <span class="dim"><i>empty</i></span><br><code>infoRange</code> <span class="dim">2</span></td>
+                <td>Multiline instructions and display radius in meters.</td>
+              </tr>
+              <tr>
+                <td><strong>Copy</strong></td>
+                <td><code>copy</code> <span class="dim"><i>empty</i></span><br><code>copy-message</code> <span class="dim">'{0}' copied to clipboard.</span></td>
+                <td>Clipboard text and optional confirmation; {0} inserts text.</td>
+              </tr>
+              <tr>
+                <td><strong>Trigger</strong></td>
+                <td><code>triggerRange</code> <span class="dim">2</span><br><code>autoTrigger</code> <span class="dim">false</span></td>
+                <td>Shared activation range in meters and automatic entry activation.</td>
+              </tr>
+              <tr>
+                <td><strong>Show / Hide</strong></td>
+                <td><code>show</code> <span class="dim"><i>empty</i></span><br><code>hide</code> <span class="dim"><i>empty</i></span></td>
+                <td>Category targets for interaction actions.</td>
+              </tr>
+              <tr>
+                <td><strong>Toggle</strong></td>
+                <td><code>toggle</code> <span class="dim"><i>empty</i></span><br><code>toggleCategory</code> <span class="dim"><i>empty</i></span></td>
+                <td>Category toggle target; toggleCategory is an alternate target alias and stays opt-in when absent.</td>
+              </tr>
+              <tr>
+                <td><strong>Toggle (Category Default)</strong></td>
+                <td><code>defaultToggle</code> <span class="dim">true</span></td>
+                <td>Default category checked state.</td>
+              </tr>
+              <tr>
+                <td><strong>Tip</strong></td>
+                <td><code>tip-name</code> <span class="dim"><i>empty</i></span><br><code>tip-description</code> <span class="dim"><i>empty</i></span></td>
+                <td>Tooltip title and description.</td>
+              </tr>
+              <tr>
+                <td><strong>Mount</strong></td>
+                <td><code>mount</code> <span class="dim">raptor</span></td>
+                <td>Allowed mount states.</td>
+              </tr>
+              <tr>
+                <td><strong>Wall (Trails)</strong></td>
+                <td><code>isWall</code> <span class="dim">false</span></td>
+                <td>Trail wall-style ribbon orientation.</td>
+              </tr>
+              <tr>
+                <td><strong>Hidden Category</strong></td>
+                <td><code>isHidden</code> <span class="dim">false</span></td>
+                <td>Category menu hiding.</td>
+              </tr>
+              <tr>
+                <td><strong>Bounce</strong></td>
+                <td><code>bounce</code> <span class="dim">bounce</span><br><code>bounce-height</code> <span class="dim">2</span><br><code>bounce-duration</code> <span class="dim">1</span><br><code>bounce-delay</code> <span class="dim">0</span></td>
+                <td>Bounce/rise mode and motion timing/height options.</td>
+              </tr>
+              <tr>
+                <td><strong>Behavior</strong></td>
+                <td><code>behavior</code> <span class="dim">0</span><br><code>invertBehavior</code> <span class="dim">false</span><br><code>resetLength</code> <span class="dim">0</span></td>
+                <td>Choose a supported behavior mode; inspect requirements and preview state.</td>
+              </tr>
+              <tr>
+                <td><strong>Can Fade</strong></td>
+                <td><code>canFade</code> <span class="dim">true</span></td>
+                <td>Permission for optional proximity/occlusion-style preview fades, separate from explicit fade thresholds.</td>
+              </tr>
+              <tr>
+                <td><strong>Checkpoint Finish Line</strong></td>
+                <td><code>cpFinish</code> <span class="dim">true</span></td>
+                <td>Independent Taquito checkpoint finish marker/trail.</td>
+              </tr>
+              <tr>
+                <td><strong>Checkpoint (Taquito Only)</strong></td>
+                <td><code>isCheckpoint</code> <span class="dim">true</span><br><code>cpColor</code> <span class="dim">FFFFFFFF</span><br><code>cpPreColor</code> <span class="dim">FFFFFFFF</span><br><code>nextCheckCount</code> <span class="dim">2</span><br><code>nextCheck</code> <span class="dim"><i>empty</i></span><br><code>cpRadius</code> <span class="dim">2</span><br><code>cpReset</code> <span class="dim"><i>empty</i></span></td>
+                <td>Taquito checkpoint links, colors, radius and reset controls.</td>
+              </tr>
+              <tr>
+                <td><strong>Reset GUID</strong></td>
+                <td><code>resetguid</code> <span class="dim"><i>empty</i></span><br><code>resetMessage</code> <span class="dim">Race reset.</span></td>
+                <td>Explicit behavior GUID reset targets, with optional message.</td>
+              </tr>
+              <tr>
+                <td><strong>Script (Authoring Only)</strong></td>
+                <td><code>script-trigger</code> <span class="dim"><i>empty</i></span><br><code>script-focus</code> <span class="dim"><i>empty</i></span><br><code>script-tick</code> <span class="dim"><i>empty</i></span><br><code>script-filter</code> <span class="dim"><i>empty</i></span><br><code>script-once</code> <span class="dim"><i>empty</i></span></td>
+                <td>Blish HUD Lua hook function calls; authoring/packaging only here.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Catalog starting values are authoring defaults, not a promise that every runtime uses the same omitted-attribute fallback. For example, previewing an omitted marker height offset differs from explicitly authoring <code>heightOffset="0"</code>. Keep inherited values and intended reader behavior in mind.</p>
+      </section>
+      <!-- Troubleshooting & useful reports -->
+      <section id="troubleshooting" aria-labelledby="troubleshooting-title">
+        <header class="section-heading">
+          <span class="section-number">17</span>
+          <div>
+            <p class="eyebrow">WHEN SOMETHING LOOKS WRONG</p>
+            <h2 id="troubleshooting-title">Troubleshooting &amp; useful reports</h2>
+          </div>
+        </header>
+        <details>
+          <summary>GW2 is running, but the app is waiting for a playable map</summary>
+          <div>
+            <p>Enter the world rather than character selection/loading. Confirm the reported map/character match the intended client, then allow telemetry to refresh. Recording also needs an open project and XML target. Report the game-launch method if the link never becomes ready.</p>
+          </div>
+        </details>
+        <details>
+          <summary>Add Existing Folder opens a picker but adds nothing</summary>
+          <div>
+            <p>This is a reported 1.0.7 issue awaiting the next patch. Continue with existing displayed/default folders and Import/New Folder. The documentation does not require this button for the main workflows.</p>
+          </div>
+        </details>
+        <details>
+          <summary>Outliner hover becomes slow on a long trail</summary>
+          <div>
+            <p>Collapse the segment's point list when it is not needed. Thousands of expanded rows can affect responsiveness; this is a known pending performance fix. Shift-expanding a branch deliberately stops at segments.</p>
+          </div>
+        </details>
+        <details>
+          <summary>A tool keeps changing points when I click</summary>
+          <div>
+            <p>Check the yellow toolbar state and on-screen tool message. Press Esc or choose Selection. Insert/remove/split/reverse tools remain active for repeated operations.</p>
+          </div>
+        </details>
+        <details>
+          <summary>A marker/trail is missing or differs in the reader</summary>
+          <div>
+            <p>Check map, effective visibility, category checkboxes, mount/behavior state, image/texture paths, alpha, fade and height offset. Verify referenced TRLs exist. Use reader reload and check its support for custom attributes. Preview size multipliers do not change exported size fields.</p>
+          </div>
+        </details>
+        <details>
+          <summary>The parent Icon choice still looks like one field on an older item</summary>
+          <div>
+            <p>Re-select the parent Icon bundle in Add Attributes to fill missing members without overwriting edited values. A deliberate child-only Icon Size should stay independent. XML only records the fields present, not which checkbox was used in an earlier build.</p>
+          </div>
+        </details>
+        <details>
+          <summary>Copy, behavior or checkpoint testing does not fire</summary>
+          <div>
+            <p>Read requirement messages. Verify targets/GUIDs, range units, clipboard permission, interaction binding and the appropriate toolbar test mode. For checkpoints, choose a start and leave/re-enter its region after starting inside it. Lua is not executed by this application.</p>
+          </div>
+        </details>
+        <details>
+          <summary>The export went to the wrong place</summary>
+          <div>
+            <p>Check Project Settings and save the project. Blank main output uses EXPORT. Alternate locations are additional destinations, not alternate project storage folders. Confirm which folder the reader is monitoring.</p>
+          </div>
+        </details>
+        <details>
+          <summary>I cannot return from Play in App to normal tabs</summary>
+          <div>
+            <p>Close the hosted game session first, then choose Standard Layout. Force Close Game is available for a stuck session.</p>
+          </div>
+        </details>
+        <p>For a report, include <b>Help → About</b> version, steps, expected/actual result, target reader and a small example when possible. For performance, include approximate marker/trail/point counts and whether a point tool or large Outliner branch is active. Application logs are under <code>%LOCALAPPDATA%\TacoStuffer\</code>.</p>
+        <p>Keep a backup of your authoring project. Review the application's <code>LICENSE.txt</code> for software terms, and the permissions for images/scripts/packs you import before redistribution. Documentation screenshots use the supplied <b>Marvelous Markers</b> example project.</p>
+      </section>
+      <footer>
+        <span>Taco Stuffer · 1.0.7 user guide<br>Created by Girbilcannon.8259</span>
+        <a href="#top">Back to top ↑</a>
+      </footer>
+    </main>
+    <dialog id="image-viewer" aria-label="Screenshot viewer">
+      <div class="viewer-bar">
+        <p id="viewer-caption"></p>
+        <div>
+          <button id="viewer-zoom" type="button" aria-pressed="false">Actual size</button>
+          <button id="viewer-close" type="button" aria-label="Close screenshot">Close ×</button>
+        </div>
+      </div>
+      <div class="viewer-scroll">
+        <img id="viewer-image" alt="">
+      </div>
+      <p class="viewer-hint">Esc closes · Actual size enables scrolling for fine UI details</p>
+    </dialog>
+  </body>
+</html>

@@ -3,7 +3,7 @@ using System.Xml.Linq;
 
 namespace TacoStuffer.Models;
 
-public sealed record ProjectAssetPaths(string MarkerIcons = "TEXTURES", string TrailTextures = "TEXTURES", string TrailFiles = "DATA")
+public sealed record ProjectAssetPaths(string MarkerIcons = "TEXTURES", string TrailTextures = "TEXTURES", string TrailFiles = "DATA", string Docs = "DOCS", string Scripts = "scripts", string CoreXml = ".")
 {
     public static string Folder(string value)
     {
@@ -14,7 +14,9 @@ public sealed record ProjectAssetPaths(string MarkerIcons = "TEXTURES", string T
         return path;
     }
 
-    public ProjectAssetPaths Validated() => new(Folder(MarkerIcons), Folder(TrailTextures), Folder(TrailFiles));
+    public ProjectAssetPaths Validated() => new(Folder(MarkerIcons), Folder(TrailTextures), Folder(TrailFiles), Folder(Docs), Folder(Scripts), Folder(CoreXml));
+
+    public IEnumerable<string> All => new[] { MarkerIcons, TrailTextures, TrailFiles, Docs, Scripts, CoreXml };
 
     public static string FilePath(string folder, string name) => folder == "." ? name : folder + "/" + name;
 

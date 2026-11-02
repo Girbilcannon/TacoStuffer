@@ -15,14 +15,16 @@ public partial class MainWindow
     private void ToggleHierarchy(object sender, RoutedEventArgs e)
     {
         if (e.OriginalSource is not ExplorerRowView { Row: { } row }) return;
-        ToggleHierarchyRow(row);
+        ToggleHierarchyRow(row, (Keyboard.Modifiers & ModifierKeys.Shift) != 0);
         e.Handled = true;
     }
 
-    private void ToggleHierarchyRow(ExplorerRow row)
+    private void ToggleHierarchyRow(ExplorerRow row, bool recursive = false)
     {
         if (!row.HasChildren) return;
-        if (!collapsedElements.Add(row.RowId)) collapsedElements.Remove(row.RowId);
+        // Segment rows exist even when their point rows have not been materialized.
+        // Change branch state first, then let RefreshExplorer build needed points.
+        OutlinerExpansion.Toggle(allExplorerRows.Select(r => new OutlinerBranch(r.RowId, r.Depth, r.HasChildren, r.Kind != "segment")).ToList(), row.RowId, collapsedElements, recursive);
         selected = row;
         RefreshExplorer(refreshScene: false);
         var visible = ElementsList.Items.Cast<ExplorerRow>().FirstOrDefault(r => r.RowId == row.RowId);

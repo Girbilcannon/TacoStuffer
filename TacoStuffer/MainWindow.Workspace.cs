@@ -22,7 +22,6 @@ public partial class MainWindow
     private bool selectingFromExplorer;
     private string? draggingCategoryPath;
     private Point categoryDragOrigin;
-    private readonly List<string> assetExtensions = [".png", ".jpg", ".jpeg", ".dds", ".bmp", ".tga"];
     private void InitializeWorkspace()
     {
         SetTabHeader(GameTab, "Game");
@@ -46,6 +45,8 @@ public partial class MainWindow
 
     private void WireEditorSelection(XmlPage page)
     {
+        WorkingLineAdorner.Attach(page.Editor);
+        WireXmlComments(page);
         SetTabHeader(page.Tab, page.Name);
         page.Tab.PreviewKeyDown += (_, e) =>
         {
@@ -592,6 +593,11 @@ public partial class MainWindow
         var actual = ElementsList.Items.Cast<ExplorerRow>().FirstOrDefault(r => r.DocumentName == row.DocumentName && r.Key == row.Key);
         if (actual?.Element == null) return;
         selected = actual;
+        if (actual.Kind is "POI" or "Trail")
+        {
+            RenameOutlinerAssets(actual);
+            return;
+        }
         var dialog = new RenameWindow("Rename " + actual.Kind, Value(actual.Element, "name", AssetStem(actual.Element)), Value(actual.Element, "DisplayName", AssetStem(actual.Element))) { Owner = this };
         if (dialog.ShowDialog() != true) return;
         if (actual.Kind == "MarkerCategory")
@@ -656,112 +662,81 @@ public partial class MainWindow
     private static string AssetStem(XElement element) => element.Name.LocalName == "MarkerCategory" ? CategoryName(element) : Path.GetFileNameWithoutExtension(Value(element, element.Name.LocalName == "Trail" ? "trailData" : "iconFile", element.Name.LocalName));
 
     private readonly Dictionary<string, (DateTime Time, List<string> Paths)> assetPickerCache = [];
-    private List<string> TexturePaths(string attribute)
-    {
-        if (projectFolder == null) return [];
-        string folder = attribute.Equals("iconFile", StringComparison.OrdinalIgnoreCase) ? assetPaths.MarkerIcons : assetPaths.TrailTextures;
-        string key = projectFolder + "|" + folder;
-        if (assetPickerCache.TryGetValue(key, out var cached) && DateTime.UtcNow - cached.Time < TimeSpan.FromSeconds(30)) return new(cached.Paths);
-        try
-        {
-            var paths = ProjectAssetPaths.Files(projectFolder, folder).Where(p => assetExtensions.Contains(Path.GetExtension(p).ToLowerInvariant())).Select(p => Path.GetRelativePath(projectFolder, p).Replace('\\', '/')).OrderBy(p => p).ToList();
-            assetPickerCache[key] = (DateTime.UtcNow, paths);
-            return new(paths);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
-        {
-            return [];
-        }
-    }
-
     private void AssetField(string name, string current)
     {
         AttributesHost.Children.Add(new TextBlock { Text = name, Foreground = (Brush)FindResource("MutedBrush"), Margin = new Thickness(0, 6, 0, 4) });
-        var paths = TexturePaths(name);
-        if (!paths.Contains(current, StringComparer.OrdinalIgnoreCase) && current.Length > 0) paths.Insert(0, current);
-        var picker = new ComboBox { ItemsSource = paths, SelectedItem = paths.FirstOrDefault(p => p.Equals(current, StringComparison.OrdinalIgnoreCase)), ToolTip = "Configured project folder and subfolders. Existing XML paths remain available." };
-        picker.SelectionChanged += (_, _) =>
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        row.Children.Add(new Border { Width = 58, Height = 58, BorderThickness = new Thickness(1), BorderBrush = (Brush)FindResource("LineBrush"),
+            Child = new Image { Source = projectFolder == null || current.Length == 0 ? null : AssetBrowserWindow.Thumbnail(projectFolder, current), Margin = new Thickness(3) } });
+        row.Children.Add(new TextBlock { Text = "Choose Asset", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 0, 0) });
+        var choose = new Button { Content = row, HorizontalContentAlignment = HorizontalAlignment.Left, ToolTip = current.Length == 0 ? "Choose an image from project assets" : current };
+        choose.Click += (_, _) =>
         {
-            if (!rebuildingAttributes && !updating && picker.SelectedItem is string path && path != current) ChangeAttribute(name, path);
+            if (rebuildingAttributes || updating) return;
+            string? path = BrowseAssets(name.Equals("iconFile", StringComparison.OrdinalIgnoreCase), true);
+            if (path != null && path != current) ChangeAttribute(name, path);
         };
-        AttributesHost.Children.Add(picker);
-        var import = new Button { Content = "Import Textures/Icons…", Margin = new Thickness(0, 8, 0, 0) };
-        import.Click += (_, _) => ImportImages(name.Equals("iconFile", StringComparison.OrdinalIgnoreCase) ? assetPaths.MarkerIcons : assetPaths.TrailTextures);
-        AttributesHost.Children.Add(import);
+        AttributesHost.Children.Add(choose);
     }
 
-    private void ImportTextures(object sender, RoutedEventArgs e)
-    {
-        if (projectFile == null)
-        {
-            Notice("No project", "Create or load a project before importing textures.");
-            return;
-        }
-        string destination = assetPaths.MarkerIcons;
-        if (!destination.Equals(assetPaths.TrailTextures, StringComparison.OrdinalIgnoreCase))
-        {
-            var chooser = new ImageDestinationWindow(assetPaths) { Owner = this };
-            if (chooser.ShowDialog() != true || chooser.Folder == null) return;
-            destination = chooser.Folder;
-        }
-        ImportImages(destination);
-    }
+    private void OpenAssets(object sender, RoutedEventArgs e) => BrowseAssets(true, false);
 
-    private void ImportImages(string destination)
+    private string? BrowseAssets(bool icons, bool choosing)
     {
-        if (projectFile == null)
+        if (projectFolder == null || projectFile == null)
         {
-            Notice("No project", "Create or load a project before importing textures.");
-            return;
+            Notice("No project", "Create or open a project before managing assets.");
+            return null;
         }
-        var pick = new OpenFileDialog { Title = "Import Textures/Icons", Multiselect = true, Filter = "Images (*.png;*.jpg;*.jpeg;*.dds;*.bmp;*.tga)|*.png;*.jpg;*.jpeg;*.dds;*.bmp;*.tga|All files (*.*)|*.*" };
-        if (pick.ShowDialog(this) != true) return;
-        if (projectFolder == null)
-        {
-            var location = new OpenFolderDialog { Title = "Choose project folder; images will be copied into TEXTURES" };
-            if (location.ShowDialog(this) != true) return;
-            projectFolder = location.FolderName;
-        }
-        var errors = new List<string>();
-        int count = 0;
-        try
-        {
-            Directory.CreateDirectory(Path.Combine(projectFolder, destination));
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            Notice("Import failed", ex.Message);
-            return;
-        }
-        foreach (string source in pick.FileNames)
-        {
-            try
-            {
-                string extension = Path.GetExtension(source);
-                if (!assetExtensions.Contains(extension.ToLowerInvariant()))
-                {
-                    errors.Add(Path.GetFileName(source) + ": unsupported image extension");
-                    continue;
-                }
-                string path = Path.Combine(projectFolder, destination, Path.GetFileName(source));
-                if (string.Equals(Path.GetFullPath(source), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase))
-                {
-                    count++;
-                    continue;
-                }
-                for (int i = 1; File.Exists(path); i++) path = Path.Combine(projectFolder, destination, Path.GetFileNameWithoutExtension(source) + "_" + i + extension);
-                File.Copy(source, path, false);
-                count++;
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                errors.Add(Path.GetFileName(source) + ": " + ex.Message);
-            }
-        }
+        if (!TrySyncXml()) return null;
+        try { ReconcileDiskAssets(); }
+        catch (Exception ex) when (ProjectError(ex)) { Notice("Assets", ex.Message); return null; }
+        string initial = icons ? assetPaths.MarkerIcons : assetPaths.TrailTextures;
+        var dialog = new AssetBrowserWindow(projectFolder, initial, choosing, MoveImageAssets,
+            ImportManagedAsset, assetPaths, MoveAssetFolder, DeleteAssetFolder,
+            PathChoices.Categories(CategoryDisplayNames()), InsertTrailAssets,
+            selected?.Element == null ? null : selected.Kind == "MarkerCategory" ? CategoryFullPath(selected.Element) : Value(selected.Element,"type"),
+            assetFolders, paths => assetFolders = paths.ToList(), SetAssetDefault, DeleteManagedAssets, RenameAssetFolder, ReconcileDiskAssets, ExternalAssetFolderRename, () => PathChoices.Categories(CategoryDisplayNames()),
+            path => pages.Any(p => p.Name.Equals(path,StringComparison.OrdinalIgnoreCase)) || codePages.Any(p => p.Name.Equals(path,StringComparison.OrdinalIgnoreCase)))
+        { Owner = DeleteDialogOwner, Topmost = true };
+        bool? accepted = dialog.ShowDialog();
         assetPickerCache.Clear();
         RefreshExplorer();
-        StatusText.Text = $"Imported {count} texture/icon file(s) into {destination}. Existing files were preserved.";
-        if (errors.Count > 0) Notice("Import results", string.Join("\n", errors));
+        if (selected?.Element != null) ShowAttributes();
+        return accepted == true ? dialog.SelectedAsset : null;
+    }
+
+    private void MoveImageAssets(IReadOnlyList<string> paths, string folder)
+    {
+        if (projectFolder == null || !TrySyncXml()) throw new InvalidOperationException("Resolve XML errors before moving assets.");
+        FlushHistoryCheckpoint();
+        var moved = Models.AssetLibrary.Move(projectFolder, paths, folder);
+        if (moved.Count == 0) return;
+        ApplyImageReferences(moved);
+        WritePages();
+    }
+
+    private void ApplyImageReferences(IReadOnlyDictionary<string, string> moved)
+    {
+        foreach (var attribute in pages.SelectMany(p => p.Xml.Descendants().Attributes()).Where(a => a.Name.LocalName.Equals("iconFile", StringComparison.OrdinalIgnoreCase) || a.Name.LocalName.Equals("texture", StringComparison.OrdinalIgnoreCase) || a.Name.LocalName.Equals("trailData", StringComparison.OrdinalIgnoreCase) || a.Name.LocalName.Equals("script",StringComparison.OrdinalIgnoreCase)))
+            if (moved.TryGetValue(attribute.Value.Replace('\\', '/'), out string? replacement)) attribute.Value = replacement;
+        foreach (var pair in moved)
+        {
+            if (textureLabels.Remove(pair.Key, out string? label)) textureLabels[pair.Value] = label;
+            for (int i = 0; i < importedAssets.Count; i++)
+                if (importedAssets[i].Equals(pair.Key, StringComparison.OrdinalIgnoreCase)) importedAssets[i] = pair.Value;
+        }
+        EditorState Rebase(EditorState state)
+        {
+            var labels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var pair in state.TextureLabels) labels[moved.GetValueOrDefault(pair.Key, pair.Key)] = pair.Value;
+            return state with { Documents = state.Documents.Select(d => d with {
+                Xml = Models.AssetLibrary.RewriteReferences(d.Xml, moved), Source = Models.AssetLibrary.RewriteReferences(d.Source, moved)
+            }).ToList(), TextureLabels = labels };
+        }
+        history.Transform(Rebase);
+        if (lastHistoryState != null) lastHistoryState = Rebase(lastHistoryState);
+        assetPickerCache.Clear();
     }
 
     private void ShowTextureAttributes(ExplorerRow row)
@@ -786,6 +761,7 @@ public partial class MainWindow
     private void RenameTexture(ExplorerRow row)
     {
         if (projectFolder == null || !TrySyncXml()) return;
+        FlushHistoryCheckpoint();
         var dialog = new RenameWindow("Rename texture/icon", Path.GetFileName(row.Key), textureLabels.GetValueOrDefault(row.Key, Path.GetFileNameWithoutExtension(row.Key))) { Owner = this };
         if (dialog.ShowDialog() != true) return;
         string name = dialog.ItemName;
@@ -814,7 +790,7 @@ public partial class MainWindow
                 }
                 File.Move(original, destination);
             }
-            foreach (var a in pages.SelectMany(p => p.Xml.Descendants().Attributes()).Where(a => (a.Name.LocalName.Equals("iconFile", StringComparison.OrdinalIgnoreCase) || a.Name.LocalName.Equals("texture", StringComparison.OrdinalIgnoreCase)) && a.Value.Replace('\\', '/').Equals(row.Key, StringComparison.OrdinalIgnoreCase))) a.Value = path;
+            ApplyImageReferences(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [row.Key] = path });
             textureLabels.Remove(row.Key);
             textureLabels[path] = dialog.DisplayName;
             selected = row with { Key = path };

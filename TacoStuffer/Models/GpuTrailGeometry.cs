@@ -4,12 +4,13 @@ using System.Runtime.InteropServices;
 namespace TacoStuffer.Models;
 
 [StructLayout(LayoutKind.Sequential)]
-public readonly struct TrailGpuVertex(Vector3 position, Vector2 uv, Vector3 center, float mapDistance = 0)
+public readonly struct TrailGpuVertex(Vector3 position, Vector2 uv, Vector3 center, float mapDistance = 0, Vector3 wallOffset = default)
 {
     public readonly Vector3 Position = position;
     public readonly Vector2 Uv = uv;
     public readonly Vector3 Center = center;
     public readonly float MapDistance = mapDistance;
+    public readonly Vector3 WallOffset = wallOffset;
 }
 
 public static class GpuTrailGeometry
@@ -35,16 +36,23 @@ public static class GpuTrailGeometry
             float mapDistance = new Vector2(direction.X, direction.Z).Length();
             var side = Vector3.Cross(direction, Vector3.UnitY);
             side = side.LengthSquared() < .000001f ? Vector3.UnitX * .508f : Vector3.Normalize(side) * .508f;
-            vertices.Add(new(a - side, new(0, -length), a, -mapLength));
-            vertices.Add(new(a + side, new(1, -length), a, -mapLength));
-            vertices.Add(new(b + side, new(1, -(length + distance)), b, -(mapLength + mapDistance)));
-            vertices.Add(new(b - side, new(0, -(length + distance)), b, -(mapLength + mapDistance)));
+            var wall = WallSide(direction) * .508f;
+            vertices.Add(new(a - side, new(0, -length), a, -mapLength, -wall));
+            vertices.Add(new(a + side, new(1, -length), a, -mapLength, wall));
+            vertices.Add(new(b + side, new(1, -(length + distance)), b, -(mapLength + mapDistance), wall));
+            vertices.Add(new(b - side, new(0, -(length + distance)), b, -(mapLength + mapDistance), -wall));
             length += distance;
             mapLength += mapDistance;
         }
         return vertices.ToArray();
     }
 
+    // Orthogonal to the path and inside its vertical plane. Keep map offsets flat.
+    public static Vector3 WallSide(Vector3 direction)
+    {
+        var side = Vector3.Cross(direction, Vector3.Cross(direction, Vector3.UnitY));
+        return side.LengthSquared() < .000001f ? Vector3.UnitX : Vector3.Normalize(side);
+    }
     public static uint[] Indices(int edgeCount)
     {
         uint[] indices = new uint[checked(edgeCount * 6)];

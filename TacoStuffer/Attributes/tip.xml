@@ -1,0 +1,4 @@
+<AttributeGroup version="1" key="tip" displayName="Tip" appliesTo="POI,MarkerCategory">
+  <Attribute name="tip-name" default="" type="multiline" optional="false" />
+  <Attribute name="tip-description" default="" type="multiline" optional="true" />
+</AttributeGroup>
