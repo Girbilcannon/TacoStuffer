@@ -6,6 +6,12 @@ internal sealed record AssetFolderMove(string Source, string Destination, IReadO
 
 internal static class AssetFolders
 {
+    // A default XML root must not expose every project folder. An explicitly
+    // registered project root does request that view, including its children.
+    public static IReadOnlyList<string> BrowseRoots(ProjectAssetPaths defaults, IEnumerable<string> registered) =>
+        defaults.All.Where(p => p != ".").Concat(registered.Select(ProjectAssetPaths.Folder))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
     public static bool Contains(string folder, string path) => folder == "." || path.Replace('\\', '/').Equals(folder, StringComparison.OrdinalIgnoreCase)
         || path.Replace('\\', '/').StartsWith(folder + "/", StringComparison.OrdinalIgnoreCase);
     public static string Parent(string folder)

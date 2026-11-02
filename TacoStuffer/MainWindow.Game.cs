@@ -24,18 +24,25 @@ public partial class MainWindow
     private long lastProcessProbe;
     private bool gameMonitorClosed;
     private bool previousOverlayDeleteDown;
+    private int presentationRefreshQueued;
+
+    private void QueuePresentationRefresh()
+    {
+        // A foreground transition sends several native and WPF notifications.
+        // Settle them together rather than restacking between activation messages.
+        if (gameMonitorClosed || System.Threading.Interlocked.Exchange(ref presentationRefreshQueued, 1) != 0) return;
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+        {
+            System.Threading.Interlocked.Exchange(ref presentationRefreshQueued, 0);
+            if (gameMonitorClosed) return;
+            RequestPreviewPresentation();
+        }));
+    }
     private void InitializeGameConnection()
     {
         gameEvents = new GameWindowEvents();
-        gameEvents.Changed += () =>
-        {
-            if (!gameMonitorClosed) Dispatcher.BeginInvoke(DispatcherPriority.Send, new Action(() =>
-                {
-                    RequestPreviewPresentation();
-                    UpdateOverlayVisibility();
-                }));
-        };
-        Activated += (_, _) => RequestPreviewPresentation();
+        gameEvents.Changed += QueuePresentationRefresh;
+        Activated += (_, _) => QueuePresentationRefresh();
         PreviewMouseDown += (_, _) => RequestPreviewPresentation();
         gameTimer.Tick += (_, _) => PollGame();
 
@@ -171,7 +178,12 @@ public partial class MainWindow
         UpdateHostedOverlayButton();
         if (gameMonitorClosed || overlay == null) return;
         NativeGameWindow.HostedGameOverlay = GameViewport.IsAttached;
-        var activeEditor = Application.Current.Windows.Cast<Window>().FirstOrDefault(w => w.IsActive && w != overlay && w != worldMarkers && w is not InteractionHudWindow && w is not OverlayToolbarWindow);
+        // Native foreground state changes before WPF's IsActive settles. Using
+        // IsActive here briefly promotes the HUD over the editor during switches.
+        nint foreground = NativeGameWindow.PresentationForegroundWindow();
+        var activeEditor = Application.Current.Windows.Cast<Window>().FirstOrDefault(w =>
+            w.IsVisible && new System.Windows.Interop.WindowInteropHelper(w).Handle == foreground
+            && w != overlay && w != worldMarkers && w is not InteractionHudWindow && w is not OverlayToolbarWindow);
         NativeGameWindow.EditorOcclusionWindow = activeEditor == null ? 0 : new System.Windows.Interop.WindowInteropHelper(activeEditor).Handle;
         if (gameClient.ProcessId == 0 || gameClient.ProcessId != overlay.BoundProcessId)
         {

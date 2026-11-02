@@ -32,3 +32,17 @@ public sealed class TrailPickCache
         return triangles;
     }
 }
+
+// Windows can briefly report no foreground HWND while switching applications.
+// Retain a known target for at most 100 ms; an observed unrelated HWND wins
+// immediately so the overlay never waits to yield to another application.
+public sealed class OverlayForegroundState
+{
+    private nint last;
+    private long observedAt;
+    public nint Observe(nint current, long now)
+    {
+        if (current != 0) { last = current; observedAt = now; return current; }
+        return now >= observedAt && now - observedAt <= 100 ? last : 0;
+    }
+}

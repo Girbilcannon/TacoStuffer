@@ -1286,3 +1286,5 @@ Overlay106Checks.Run();
 Attribute107Checks.Run();
 
 Attribute107BundleChecks.Run();
+
+Final107Checks.Run();

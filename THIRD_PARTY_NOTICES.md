@@ -1,44 +1,82 @@
-# TACO STUFFER — THIRD-PARTY COMPONENTS AND DISTRIBUTION NOTICES
-The original Taco Stuffer application uses a custom personal-use license; see
-LICENSE.txt and LICENSE-INFO.md. That license does not replace the terms of
-independently licensed components.
+# Third-party components and notices
 
-### SOURCE-REPOSITORY INVENTORY
-The reviewed TacoStuffer.csproj targets net10.0-windows and uses WPF. It has no
-explicit third-party PackageReference entries. The native graphics/window calls
-use Windows APIs. This is a source-level inventory, not a complete inventory of
-a published self-contained executable or of every asset a user might import.
+Applies to **Taco Stuffer 1.0.7**. Taco Stuffer's own terms remain in [LICENSE.txt](LICENSE.txt).
 
-### MICROSOFT .NET / WINDOWS DESKTOP RUNTIME
-Self-contained builds embed .NET and Windows Desktop runtime components. Their
-applicable distributed-binary terms and third-party notices remain in effect.
-The Taco Stuffer license does not restrict rights under those runtime licenses.
+| Component | Version | Use | License |
+| --- | --- | --- | --- |
+| AvalonEdit | 6.3.1.120 | WPF XML/Lua/document editor | MIT |
+| Markdig | 0.42.0 | Markdown preview generation | BSD-2-Clause |
+| Microsoft .NET / Windows Desktop | .NET 10; exact patch depends on publish | Application/runtime framework | Applicable Microsoft binary terms and bundled component notices |
 
-Before distributing a self-contained binary, collect the full applicable LICENSE
-and THIRD-PARTY-NOTICES files from the exact runtime packages used for that build.
-Record the versions and include those texts in the release, for example under
-THIRD_PARTY/. The exact runtime versions and their notice texts cannot be derived
-from the target framework alone and have not been supplied with this source ZIP.
-This file is therefore not a complete notice bundle for the published executable.
+Package versions were checked against `TacoStuffer/TacoStuffer.csproj` and restored package metadata. These two direct packages have no additional NuGet dependencies for the framework assets selected by this application. Self-contained runtime components are a separate inventory.
 
-Use the release build's obj/project.assets.json, restored runtime packages and
-build/publish output to identify those versions. See docs/RELEASING.md.
-.NET source licensing and Microsoft's distributed Windows-binary terms are not
-interchangeable; do not substitute a generic source MIT text for the package terms.
+[Full notice text](THIRD_PARTY_NOTICES.txt) includes the AvalonEdit and Markdig licenses. The same notice is embedded from `TacoStuffer/THIRD-PARTY-NOTICES.txt` and available through About → Third-party notices, preserving single-EXE use. Keep the root and embedded copies synchronized.
 
-**Reference information:**
-https://github.com/dotnet/core/blob/main/license-information.md
-https://github.com/dotnet/core/blob/main/license-information-windows.md
-https://dotnet.microsoft.com/en-us/dotnet_library_license.htm
+## Runtime publishing
 
-### WINDOWS SYSTEM COMPONENTS
-Windows supplies the WPF/Direct3D/composition/window-management system interfaces.
-Calling these APIs does not grant permission to redistribute arbitrary Windows
-system DLLs. Do not copy system DLLs into release packages to satisfy dependencies.
+For each self-contained release, retain the exact runtime versions and their required license/third-party notices from the restored publish packages. A framework-dependent build inventory does not fully describe a self-contained release. See [release guidance](docs/RELEASING.md).
 
-### GUILD WARS 2 AND USER MATERIALS
-Guild Wars 2 and related marks and assets belong to their respective owners.
-Taco Stuffer is independent and does not claim official endorsement. Imported
-packs, textures and scripts retain their own terms; users are responsible for
-permissions to use and distribute them. Record additional bundled third-party
-libraries, fonts or images and include their required notices if added later.
+## Other content
+
+Windows supplies system interfaces; no arbitrary Windows system DLL redistribution is authorized here. Guild Wars 2 and related marks belong to their owners. Imported packs, textures, scripts and other content retain their original permissions. Include additional notices when adding third-party components or bundled assets.
+
+## Sources
+
+- [AvalonEdit package](https://www.nuget.org/packages/AvalonEdit/6.3.1.120) and [upstream license](https://github.com/icsharpcode/AvalonEdit/blob/v6.3.1/LICENSE)
+- [Markdig package](https://www.nuget.org/packages/Markdig/0.42.0) and [upstream license](https://github.com/xoofx/markdig/blob/0.42.0/license.txt)
+- [Microsoft .NET licensing](https://github.com/dotnet/core/blob/main/license-information.md) and [Windows binary terms information](https://github.com/dotnet/core/blob/main/license-information-windows.md)
+
+## AvalonEdit license
+
+```text
+MIT License
+
+Copyright (c) AvalonEdit Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+```
+
+## Markdig license
+
+```text
+Copyright (c) 2018-2019, Alexandre Mutel
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification
+, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this 
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice, 
+   this list of conditions and the following disclaimer in the documentation 
+   and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE 
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL 
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR 
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER 
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE 
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```

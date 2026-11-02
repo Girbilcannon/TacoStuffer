@@ -351,9 +351,16 @@ public static class NativeGameWindow
         return GetGUIThreadInfo(thread, ref info) && (info.Focus == game.Handle || IsChild(game.Handle, info.Focus));
     }
 
+    private static readonly TacoStuffer.Models.OverlayForegroundState presentationForeground = new();
+    public static nint PresentationForegroundWindow()
+    {
+        nint current = presentationForeground.Observe(GetForegroundWindow(), Environment.TickCount64);
+        return current != 0 && IsWindow(current) && IsWindowVisible(current) ? current : 0;
+    }
+
     public static bool IsForeground(GameClientWindow game, nint overlay, int editorProcess = 0)
     {
-        nint foreground = GetForegroundWindow();
+        nint foreground = PresentationForegroundWindow();
         if (foreground == 0) return false;
         if (foreground == game.Handle) return true;
         GetWindowThreadProcessId(foreground, out uint foregroundProcess);

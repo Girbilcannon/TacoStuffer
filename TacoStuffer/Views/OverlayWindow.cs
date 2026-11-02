@@ -1024,7 +1024,6 @@ public sealed class OverlayWindow : PreviewDialog
         if (frame != null) telemetry.Text = frame.CharacterName + " · Map " + frame.MapId + "\n" + $"Mumble XYZ (Y-up)  {frame.AvatarPosition.X:F2}  {frame.AvatarPosition.Y:F2}  {frame.AvatarPosition.Z:F2}";
         if (!playable || !game.TryBounds(out var bounds) || !NativeGameWindow.IsForeground(game, Handle, editorProcess))
         {
-            Topmost = false;
             if (IsVisible) Hide();
             return;
         }
@@ -1041,7 +1040,6 @@ public sealed class OverlayWindow : PreviewDialog
             if (!NativeGameWindow.IsForeground(game, Handle, editorProcess))
             {
                 presentationAllowed = false;
-                Topmost = false;
                 Hide();
                 return;
             }
@@ -1056,7 +1054,8 @@ public sealed class OverlayWindow : PreviewDialog
                 x = work.Right - width - 8;
                 y = work.Top + 8;
             }
-            Topmost = NativeGameWindow.OcclusionFor(false) == 0;
+            // Native placement owns the band and anchor together. Setting WPF
+            // Topmost first briefly raises this window over the entire HUD stack.
             if (!freePositionInitialized || !NativeGameWindow.HasCorrectOverlayBand(Handle, false))
             {
                 if (NativeGameWindow.PlaceOverlay(Handle, NativeGameWindow.EditorOcclusionWindow, x, y, width, height, true))

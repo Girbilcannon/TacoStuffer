@@ -1,42 +1,70 @@
-# Taco Stuffer
-Taco Stuffer is the first ever, fully featured, marker development suite for Guild Wars 2 pathing enthusiasts. It comes complete with a wide range of features designed to build a custom, fully authored marker pack with a **.taco** extension.
+# Taco Stuffer · 1.0.7
 
-### Organized Project Structure
-- New projects are built with folder structures that can be edited through project settings
-- XMLs are all formatted with human readability in mind
+**Guild Wars 2 marker-pack authoring suite** · by: Girbilcannon.8259
 
-### Professional User Interface
-- 3 pane tab-based layout
-- Hierarchy based Elements tab for keeping assets organized with categories
-- Quick Menu tab for viewing the actual in-game layout that would used by your favorite pathing tools
-- Attributes pan for codeless control over everything
-- Code tabs for inspecting or manually modifying code
-- Game Overlay for inserting markers and recording trail data
-- (Experimental) In-App Game view for single-monitor development
+Create markers, record and edit trails, organize categories, and compile `.taco` packs. Work through the visual controls, XML, or both. Taco Stuffer is a Windows desktop application built with C#/.NET 10 and WPF.
 
-### Codeless Development
-This is a must for speed and reliability for those who do not like to look at lines of code. Users can select from a wide range available attributes to apply to categories, markers, or trails to gain control over them.
+[User guide](https://girbilcannon.github.io/TacoStuffer/) · [Discord](https://discord.gg/KU8jwACydZ) · [Downloads](https://github.com/Girbilcannon/TacoStuffer/releases)
 
-### Advanced Code Development
-Users who prefer to work in code will find that the built in attributes pane will only speed up their workflow. Making changes in the attributes pane reflect what is added to or removed from the code, always applying to the correct file, category, or asset. Even if you click and drag a grouping of markers to a new category, all type paths will be automatically updated in the XML.
+## Get started
 
-Even if the pack developer needs to use attributes that are not yet supported by Taco Stuffer, simply adding them to the XML will automatically apply them as a **Custom Attribute** within the Attributes pane, also stored within the Project root. These stored attribute definitions can be transferred into other projects. Like custom attributes, LUA files, though not yet supported, will still be readable and allow for code driven customizations visible after the project is compiled.
-<img width="1793" height="940" alt="image" src="https://github.com/user-attachments/assets/db159e0a-955d-4a2e-8b83-87feb5332bc1" />
+1. Download the published Windows x64 application from Releases. Run `TacoStuffer.exe`.
+2. Create a project and choose a project location. Keep the `.cilantro` project, XML, images, documents and editable trail data together.
+3. Start GW2 and enter a playable map. With a project open, choose **Open Game Overlay** and select the recording category/XML.
+4. Add a marker or create a trail and start recording. Edit its position, appearance and attributes.
+5. Save, then click **Stuff Taco Now!** to build your `.taco`. Test the result in each intended pathing reader.
 
+A published self-contained build is a single EXE; the project you author is a separate folder. Do not run the loose EXE from an ordinary build output without its dependencies. See the publish command below for a distributable single-file build.
 
-### Fully Editable Trails
-Finish a few good trails and realize that some of them are wrong? Taco Stuffer's open-ended trail recording lets you always have control over your trails as though they never even left the application...because they haven't. Not only can you select individual trail segments and their points, Taco Stuffer offers an innovative trail smoothness slider that lets you break add or remove points without ever breaking its flow. You can also select trail points and move them around. Selecting multiple trail points will also let you rotate the group in world space however you wish. Trails points are always fully editable, and only converted **.trl** files upon compile, which will still retain your open-ended trails regardless.
+## Main features
 
-### Import Existing Taco Packs
-If you have already developed a marker/trail pack, simply import it and take advantage of Taco Stuffer's advanced development features. Your imports will automatically take the shape of a project layout. You can even convert existing **.trl** files into open-ended trails. Though not fully supported, LUA scripts are retained and editable. Attributes not fully supported are also stored as custom, for simple re-useability later and transfer to other projects.
+- **Outliner:** categories, markers, trails, segments, points, XML, Scripts and Docs. Multi-selection, indexed batch renaming, middle-drag reordering and Shift-expand that stops at segments.
+- **Quick Menu:** preview your pack's category hierarchy, display names, separators and visibility toggles as users navigate them in a pathing tool.
+- **Attributes:** visual editing, inherited-value inspection, overrides, color pickers and custom definitions. Select a parent bundle for its complete controls or individual children for independent XML fields.
+- **Game overlay and toolbar:** record markers/trails; select and manipulate items; insert/remove points; split, merge and reverse segments; test supported interactions and checkpoints. Tooltips explain the toolbar icons.
+- **Editable trails:** retain authoring points and segments in the project; compile to TRL files. Import external TRLs, choose a category and optionally make them editable.
+- **Project Assets:** browse physical project folders, import files, preview images, move/delete supported files/folders and choose default folder roles through the context menu. Add Existing Folder registers folders already inside the project; copy external folders into the project before registering them.
+- **Code and documents:** XML working-line indication and comment actions; Lua syntax coloring; Markdown editing/preview; plain-text documents. Optional Markdown/text inclusion when compiling.
+- **Pack import/export:** import `.taco` packs and build to a main output plus up to two alternate locations for testing in different readers.
+- **Play in App:** experimental hosted game layout with adjustable/detachable code views. The standalone overlay remains available for normal authoring.
 
-### Single Monitor Support
-Even if you are on a laptop or only have one monitor, Taco Stuffer offers not only just overlay tools to help you do what you need to do while in the game, and visualizing your assets, but it also has an *(EXPERIMENTAL)* game window capture, allowing you play the game directly inside the application while you work on your project end to end.
-<img width="2560" height="1080" alt="image" src="https://github.com/user-attachments/assets/156bdc12-e057-4b62-a341-e49968ca26d1" />
+Taco Stuffer **does not execute Lua**. Scripts can be authored and packaged for a compatible reader such as Blish HUD Pathing. Preview support varies by attribute and reader. Taquito-specific checkpoints/sticky features require a reader implementing those attributes; they are not universal TacO/Blish features. See the [guide](https://girbilcannon.github.io/TacoStuffer/) for units, inheritance, interactions and checkpoint setup.
 
+## Project folders
 
-### Stuffing The Taco!
-This is project compiling made easy! when you are ready to make the **.taco** file to test out in your favorite pathing tool, simply click the **STUFF TACO NOW!** button in the top right and your entire project will be packed up, placed in the proper folder you specify, and ready to go.<br />
+Defaults include `TEXTURES`, `DATA`, `DOCS`, `scripts`, and root XML documents. Manage default roles in **Project → Assets → right-click a folder → Make Default**. Internal editable-trail/custom-definition folders have separate purposes. Project Settings controls compiled output destinations and documentation inclusion.
 
-[![AI Assisted Yes](https://img.shields.io/badge/AI%20Assisted-Yes-green?style=for-the-badge)](https://github.com/mefengl/made-by-ai)<br />
-Even though I am happy to say that most of this tool was developed directly by a human, there are still a fair amount of features within where the use of AI was necessary. Because of this, I have locked down coding to only accept very specific XML and never execute internal Lua Scripts. There is also no unauthorized machine, internet, or game account access anywhere in this tool, only using publicly accessible game telemetry data.
+Keep your editable project even after compiling: a `.taco` is the reader-facing result, not a replacement for the full authoring project. Back up before importing or performing large edits.
+
+## Build from source
+
+Install the **.NET 10 SDK** on Windows, then run from the repository root:
+
+```powershell
+dotnet build .\TacoStuffer\TacoStuffer.csproj -c Release
+dotnet run --project .\Checks\TacoStuffer.Checks.csproj -c Release
+```
+
+Publish the Windows x64 single-file application:
+
+```powershell
+dotnet publish .\TacoStuffer\TacoStuffer.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=embedded
+```
+
+The published EXE is under `TacoStuffer/bin/Release/net10.0-windows/win-x64/publish/`. Single-file publishing may extract native runtime files to temporary storage when launched. Retain the applicable release licenses/notices; see [release guidance](docs/RELEASING.md).
+
+`Checks` is development regression-check source, not an end-user application dependency. Commit its `.cs` and `.csproj` files; exclude generated `bin` and `obj` directories.
+
+## Documentation and support
+
+**Help → Documentation**, **Help → Discord**, and **Help → About** provide quick access from the application. The online guide's source and screenshots live under `DOCUMENTATION/`; its GitHub Pages workflow is `.github/workflows/documentation.yml`.
+
+Report normal bugs through repository Issues or Discord with the version, steps and a small example. Include marker/trail/point counts for performance reports. Review samples and logs before posting. Report security-sensitive issues privately using [SECURITY.md](SECURITY.md).
+
+## License and notices
+
+Taco Stuffer uses a **custom personal-use, source-available license**. It is not an open-source license. Personal noncommercial use and distribution of your own packs are permitted under the existing terms; code reuse, application redistribution, modifications and commercial use require permission as specified in [LICENSE.txt](LICENSE.txt). [LICENSE.md](LICENSE.md) is a readable copy, and [LICENSE-INFO.md](LICENSE-INFO.md) summarizes the terms.
+
+[Privacy](PRIVACY.md) · [Security](SECURITY.md) · [Third-party notices](THIRD_PARTY_NOTICES.md)
+
+Independent project; not affiliated with or endorsed by ArenaNet. Guild Wars 2 and related marks belong to their respective owners.

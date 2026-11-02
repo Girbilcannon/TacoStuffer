@@ -1,11 +1,44 @@
-Taco Stuffer — third-party components introduced in 0.1.3b
+TACO STUFFER 1.0.7 — THIRD-PARTY COMPONENTS AND NOTICES
 
-These licenses apply to the named third-party components; they do not change
-Taco Stuffer's own application/source license.
+Taco Stuffer's original application code/assets/documentation remain governed by
+LICENSE.txt. Independently licensed components retain their own terms.
 
-AvalonEdit 6.3.1.120
+DIRECT PACKAGE INVENTORY
+
+AvalonEdit 6.3.1.120 — WPF code editor — MIT
+https://www.nuget.org/packages/AvalonEdit/6.3.1.120
 https://github.com/icsharpcode/AvalonEdit
 NuGet copyright: 2000-2025 AlphaSierraPapa for the SharpDevelop Team
+License text below is from the upstream v6.3.1 source.
+
+Markdig 0.42.0 — Markdown rendering — BSD-2-Clause
+https://www.nuget.org/packages/Markdig/0.42.0
+https://github.com/xoofx/markdig
+License text below is from the upstream 0.42.0 source.
+
+The project targets net10.0-windows, uses WPF, and calls Windows native APIs
+for window/input/Direct3D support. These package versions match TacoStuffer.csproj.
+
+MICROSOFT .NET / WINDOWS DESKTOP
+
+Self-contained publishing bundles .NET and Windows Desktop runtime components.
+Applicable Microsoft binary terms and third-party notices remain in effect.
+The target framework alone does not identify the exact runtime patch version
+in the released EXE. Check the specific publish restore/output and preserve the
+license/notice files from those runtime packages for that release. This source
+inventory is not a substitute for those exact runtime-package notices.
+
+https://github.com/dotnet/core/blob/main/license-information.md
+https://github.com/dotnet/core/blob/main/license-information-windows.md
+
+WINDOWS, GAME AND USER MATERIALS
+
+Windows system APIs do not authorize redistribution of arbitrary system DLLs.
+Guild Wars 2 and related marks belong to their owners. Taco Stuffer is independent
+and does not claim ArenaNet endorsement. Imported packs, scripts, images and other
+user materials retain their own terms and are not relicensed by this notice.
+
+FULL AVALONEDIT LICENSE
 
 MIT License
 
@@ -30,8 +63,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-Markdig 0.42.0
-https://github.com/xoofx/markdig
+FULL MARKDIG LICENSE
 
 Copyright (c) 2018-2019, Alexandre Mutel
 All rights reserved.

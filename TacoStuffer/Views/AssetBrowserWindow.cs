@@ -122,7 +122,7 @@ internal sealed class AssetBrowserWindow : PreviewDialog
         addExisting.Click += (_, _) => Safely(AddExistingFolder); folderActions.Children.Add(addExisting);
         folderActions.Children.Add(new TextBlock { Text = "Right-click folders to make them default folder types.",
             Foreground = (Brush)FindResource("MutedBrush"), Opacity = .75, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(2,4,2,0) });
-        left.Children.Add(folders); folders.SelectedItemChanged += (_, e) => { if (e.NewValue is TreeViewItem { Tag: string path }) { folder = path; if (!rebuildingFolders) RefreshFiles(); } };
+        left.Children.Add(folders); folders.SelectedItemChanged += (_, e) => { if (!rebuildingFolders && e.NewValue is TreeViewItem { Tag: string path }) { folder = path; RefreshFiles(); } };
         var splitter = new GridSplitter { Width = 5, HorizontalAlignment = HorizontalAlignment.Stretch }; Grid.SetColumn(splitter, 1); layout.Children.Add(splitter);
         var right = new DockPanel { Margin = new Thickness(10, 0, 0, 0) }; Grid.SetColumn(right, 2); layout.Children.Add(right);
         location.Margin = new Thickness(0, 0, 0, 8); DockPanel.SetDock(location, Dock.Top); right.Children.Add(location); right.Children.Add(files);
@@ -288,7 +288,7 @@ internal sealed class AssetBrowserWindow : PreviewDialog
         rebuildingFolders = true;
         try
         {
-        var visible = defaults.All.Concat(registeredFolders).Where(p => p != ".").Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var visible = AssetFolders.BrowseRoots(defaults, registeredFolders);
         var expanded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         void Remember(TreeViewItem item) { if (item.IsExpanded && item.Tag is string path) expanded.Add(path); foreach (TreeViewItem child in item.Items) Remember(child); }
         foreach (TreeViewItem item in folders.Items) Remember(item);
@@ -325,7 +325,8 @@ internal sealed class AssetBrowserWindow : PreviewDialog
                 string child = Path.GetRelativePath(root, path).Replace('\\', '/');
                 try { ProjectAssetPaths.Folder(child); AssetLibrary.Resolve(root, child); }
                 catch (InvalidOperationException) { continue; }
-                if (!Path.GetFileName(path).StartsWith('.') && visible.Any(p => AssetFolders.Contains(p,child) || AssetFolders.Contains(child,p))) item.Items.Add(Build(child));
+                if (visible.Any(p => AssetFolders.Contains(p,child) || AssetFolders.Contains(child,p))
+                    && (!Path.GetFileName(path).StartsWith('.') || registeredFolders.Any(p => AssetFolders.Contains(p,child) || AssetFolders.Contains(child,p)))) item.Items.Add(Build(child));
             }
             if (relative.Equals(folder, StringComparison.OrdinalIgnoreCase)) item.IsSelected = true;
             return item;
@@ -493,8 +494,23 @@ internal sealed class AssetBrowserWindow : PreviewDialog
     {
         var picker = new OpenFolderDialog { Title = "Add an existing folder inside this project", InitialDirectory = root };
         if (picker.ShowDialog(this) != true) return;
-        string relative = ProjectAssetPaths.Folder(Path.GetRelativePath(root,picker.FolderName).Replace('\\','/'));
-        _ = AssetLibrary.Resolve(root,relative); RegisterFolder(relative); folder = relative; RefreshFolders();
+        string relative;
+        try
+        {
+            relative = ProjectAssetPaths.Folder(Path.GetRelativePath(root, picker.FolderName).Replace('\\', '/'));
+            if (!Directory.Exists(AssetLibrary.Resolve(root, relative))) throw new DirectoryNotFoundException("The selected folder no longer exists.");
+        }
+        catch (InvalidOperationException ex)
+        {
+            new NoticeWindow("Choose a project folder", "Choose a folder inside this project's directory, outside EXPORT and internal storage. To add an external folder, copy it into the project first, then choose it here.\n\n" + ex.Message) { Owner = this }.ShowDialog();
+            return;
+        }
+        RegisterFolder(relative);
+        folder = relative;
+        search.Clear();
+        fileFilter.SelectedIndex = choosing ? 1 : 0;
+        RefreshFolders();
+        status.Text = "Added folder: " + (relative == "." ? "Project (all asset folders)" : relative) + ". Save Project to retain it. Import documents explicitly to add them to the Outliner.";
     }
     private void RenameFolder(string relative)
     {

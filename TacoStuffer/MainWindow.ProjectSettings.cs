@@ -14,7 +14,7 @@ public partial class MainWindow
             Notice("No project", "Create or open a project first.");
             return;
         }
-        var dialog = new ProjectSettingsWindow(projectFolder, assetPaths, tacoOutputFolder, includeDocumentation, () => BrowseAssets(true, false), () => assetPaths, alternateOutputs) { Owner = this };
+        var dialog = new ProjectSettingsWindow(projectFolder, assetPaths, tacoOutputFolder, includeDocumentation, alternateOutputs: alternateOutputs) { Owner = this };
         if (dialog.ShowDialog() != true) return;
         try
         {
